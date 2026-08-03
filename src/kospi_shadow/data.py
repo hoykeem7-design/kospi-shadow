@@ -63,6 +63,12 @@ def _retry_get(
 
 def _normalise_ohlcv(df: pd.DataFrame, source: str, *, strict_ohlc: bool = True) -> pd.DataFrame:
     out = df.copy()
+    # yfinance may return an index named ``Date`` while callers also provide a
+    # concrete ``Date`` column. Pandas then treats ``sort_values("Date")`` as
+    # ambiguous. Once a real Date column exists the index is only positional,
+    # so discard the colliding index name before any column operations.
+    if "Date" in out.columns and "Date" in set(out.index.names):
+        out = out.reset_index(drop=True)
     if "Date" not in out.columns:
         if out.index.name is not None or isinstance(out.index, pd.DatetimeIndex):
             out = out.reset_index()
@@ -201,11 +207,23 @@ def fetch_yahoo_factors_batch(
                 part = raw.copy()
             if "Close" not in part.columns:
                 raise RuntimeError("Close missing")
-            close = pd.DataFrame({"Date": part.index, "Close": part["Close"]})
-            close["Open"] = close["Close"]
-            close["High"] = close["Close"]
-            close["Low"] = close["Close"]
-            close["Volume"] = part["Volume"] if "Volume" in part.columns else 0.0
+            # Use arrays rather than indexed Series so pandas cannot retain a
+            # Date-named index alongside the Date column. This was the source of
+            # the production error: "Date is both an index level and a column".
+            close_values = pd.to_numeric(part["Close"], errors="coerce").to_numpy()
+            volume_values = (
+                pd.to_numeric(part["Volume"], errors="coerce").to_numpy()
+                if "Volume" in part.columns
+                else np.zeros(len(part), dtype=float)
+            )
+            close = pd.DataFrame({
+                "Date": pd.to_datetime(part.index).to_numpy(),
+                "Open": close_values,
+                "High": close_values,
+                "Low": close_values,
+                "Close": close_values,
+                "Volume": volume_values,
+            })
             fresh = _normalise_ohlcv(close, f"yahoo-factor:{ticker}", strict_ohlc=False)
             merged = _merge_cached(cached.get(name), fresh, f"yahoo-factor:{ticker}")
             path = cache_dir / f"yahoo_{name}.csv"
@@ -248,6 +266,7 @@ def fetch_krx_kospi(
     timeout: int,
     retries: int,
     pause_seconds: float,
+    recheck_recent_business_days: int = 5,
 ) -> pd.DataFrame:
     api_key = os.getenv("KRX_AUTH_KEY", "").strip() or os.getenv("KRX_API_KEY", "").strip()
     if not api_key:
@@ -263,11 +282,33 @@ def fetch_krx_kospi(
     checked_path = cache_path.with_suffix(".checked_dates.txt")
     checked_dates = set(checked_path.read_text(encoding="utf-8").split()) if checked_path.exists() else set()
     known_dates = cached_dates | checked_dates
-    scan_start = pd.Timestamp(start)
-    if known_dates:
-        scan_start = max(scan_start, pd.Timestamp(max(known_dates)) + pd.Timedelta(days=1))
-    requested = pd.bdate_range(start=scan_start, end=end)
-    _log(f"KRX incremental scan: {len(requested)} business dates from {scan_start.date()} to {end}")
+
+    # A date can be checked before KRX publishes its final daily row. Never
+    # permanently suppress the most recent sessions: re-query a small rolling
+    # business-day window so a previously empty current-day response is filled
+    # on the next run. Older known dates remain skipped for speed.
+    start_ts = pd.Timestamp(start).normalize()
+    end_ts = pd.Timestamp(end).normalize()
+    all_business_dates = pd.bdate_range(start=start_ts, end=end_ts)
+    recent_days = max(0, int(recheck_recent_business_days))
+    recent_cutoff = (
+        end_ts - pd.offsets.BDay(recent_days - 1)
+        if recent_days > 0
+        else end_ts + pd.offsets.BDay(1)
+    )
+    requested = pd.DatetimeIndex([
+        ts for ts in all_business_dates
+        if ts.strftime("%Y%m%d") not in known_dates or ts >= recent_cutoff
+    ])
+    if len(requested):
+        _log(
+            f"KRX incremental scan: {len(requested)} business dates "
+            f"from {requested.min().date()} to {requested.max().date()} "
+            f"(recent recheck={recent_days})"
+        )
+    else:
+        latest_known = max(known_dates) if known_dates else "none"
+        _log(f"KRX incremental scan: 0 dates; cache/checked current through {latest_known}")
 
     new_frames: list[pd.DataFrame] = []
     for i, ts in enumerate(requested, start=1):
@@ -375,6 +416,7 @@ def collect_data(config: dict[str, Any], project_root: Path) -> DataBundle:
                 timeout=timeout,
                 retries=retries,
                 pause_seconds=float(config.get("krx_pause_seconds", 0.12)),
+                recheck_recent_business_days=int(config.get("krx_recheck_recent_business_days", 5)),
             )
             target_provider = "krx_official_open_api"
         except Exception as exc:

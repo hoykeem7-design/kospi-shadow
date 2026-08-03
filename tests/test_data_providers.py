@@ -71,6 +71,7 @@ def test_fetch_krx_uses_header_and_cache(monkeypatch, tmp_path: Path):
     first = data_module.fetch_krx_kospi(
         start="2026-07-30", end="2026-07-30", cache_path=cache,
         names=["코스피"], timeout=3, retries=1, pause_seconds=0,
+        recheck_recent_business_days=0,
     )
     assert len(first) == 1
     assert calls[0]["headers"] == {"AUTH_KEY": "secret-test-key"}
@@ -79,6 +80,7 @@ def test_fetch_krx_uses_header_and_cache(monkeypatch, tmp_path: Path):
     second = data_module.fetch_krx_kospi(
         start="2026-07-30", end="2026-07-30", cache_path=cache,
         names=["코스피"], timeout=3, retries=1, pause_seconds=0,
+        recheck_recent_business_days=0,
     )
     assert len(second) == 1
     assert calls == []
@@ -102,3 +104,78 @@ def test_fetch_fred_parses_missing_values(monkeypatch):
     monkeypatch.setattr(data_module, "_retry_get", fake_get)
     frame = data_module.fetch_fred_series("DGS10", "2026-07-01", timeout=3, retries=1)
     assert frame["value"].tolist() == [4.12, 4.10]
+
+
+def test_yahoo_batch_handles_date_index_and_date_column(monkeypatch, tmp_path: Path):
+    import sys
+    import types
+    import numpy as np
+
+    dates = pd.DatetimeIndex(["2026-07-30", "2026-07-31"], name="Date")
+    columns = pd.MultiIndex.from_product([["^GSPC", "KRW=X"], ["Close", "Volume"]])
+    raw = pd.DataFrame(
+        [
+            [6300.0, 100.0, 1380.0, 200.0],
+            [6320.0, 110.0, 1375.0, 210.0],
+        ],
+        index=dates,
+        columns=columns,
+    )
+
+    fake_yf = types.SimpleNamespace(download=lambda *args, **kwargs: raw)
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    factors, warnings = data_module.fetch_yahoo_factors_batch(
+        {"sp500": "^GSPC", "usdk_rw": "KRW=X"},
+        start="2026-07-01",
+        end="2026-08-01",
+        cache_dir=cache_dir,
+    )
+
+    assert warnings == []
+    assert set(factors) == {"sp500", "usdk_rw"}
+    assert factors["sp500"]["Date"].tolist() == list(dates)
+    assert np.allclose(factors["usdk_rw"]["Close"], [1380.0, 1375.0])
+
+
+def test_fetch_krx_rechecks_recent_checked_date(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_get(url, *, params=None, headers=None, timeout=30, retries=4):
+        calls.append(params["basDd"])
+        return FakeResponse({
+            "OutBlock_1": [{
+                "BAS_DD": params["basDd"],
+                "IDX_NM": "코스피",
+                "OPNPRC_IDX": "3200",
+                "HGPRC_IDX": "3220",
+                "LWPRC_IDX": "3190",
+                "CLSPRC_IDX": "3210",
+                "ACC_TRDVOL": "1000",
+            }]
+        })
+
+    monkeypatch.setenv("KRX_AUTH_KEY", "secret-test-key")
+    monkeypatch.setattr(data_module, "_retry_get", fake_get)
+    cache = tmp_path / "krx.csv"
+    pd.DataFrame({
+        "Date": ["2026-07-31"],
+        "Open": [3100], "High": [3120], "Low": [3090], "Close": [3110], "Volume": [1000],
+    }).to_csv(cache, index=False)
+    cache.with_suffix(".checked_dates.txt").write_text("20260731\n20260803\n", encoding="utf-8")
+
+    result = data_module.fetch_krx_kospi(
+        start="2026-07-31",
+        end="2026-08-03",
+        cache_path=cache,
+        names=["코스피"],
+        timeout=3,
+        retries=1,
+        pause_seconds=0,
+        recheck_recent_business_days=1,
+    )
+
+    assert calls == ["20260803"]
+    assert result["Date"].max() == pd.Timestamp("2026-08-03")

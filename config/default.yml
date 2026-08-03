@@ -1,5 +1,5 @@
 project:
-  name: kospi_shadow_auto_v3
+  name: kospi_shadow_auto_v3_1
   timezone: Asia/Seoul
   random_state: 20260731
 
@@ -21,6 +21,7 @@ data:
   request_timeout_seconds: 30
   request_retries: 4
   krx_pause_seconds: 0.10
+  krx_recheck_recent_business_days: 5
   factor_cache_overlap_days: 10
   fred_cache_overlap_days: 14
 

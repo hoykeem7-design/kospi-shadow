@@ -352,7 +352,7 @@ def _write_model_card(output_dir: Path, metrics: dict[str, Any]) -> None:
     pred = metrics["latest_prediction"]
     manifest = metrics["data_manifest"]
     cls = metrics["classification"]
-    card = f"""# KOSPI SHADOW AUTO v3 — Model Card
+    card = f"""# KOSPI SHADOW AUTO v3.1 — Model Card
 
 ## Status
 

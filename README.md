@@ -1,6 +1,12 @@
-# KOSPI SHADOW AUTO v3
+# KOSPI SHADOW AUTO v3.1
 
 Research-only KOSPI pre-open forecasting pipeline. It fails closed: probabilities may be produced, but `signal_enabled` stays false unless every promotion check passes.
+
+## v3.1 fixes
+
+- Fixes Yahoo batch factors failing with `Date is both an index level and a column label`.
+- Rechecks the most recent five KRX business dates so a session queried before publication is not permanently skipped.
+- Keeps the fast cached daily-prediction design introduced in v3.
 
 ## v3 upgrades
 

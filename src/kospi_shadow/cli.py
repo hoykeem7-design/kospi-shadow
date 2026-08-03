@@ -9,7 +9,7 @@ from .pipeline import run_pipeline
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run KOSPI SHADOW v3 pipeline")
+    parser = argparse.ArgumentParser(description="Run KOSPI SHADOW v3.1 pipeline")
     parser.add_argument("--config", default="config/default.yml")
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--mode", choices=("auto", "full", "predict"), default="auto")
