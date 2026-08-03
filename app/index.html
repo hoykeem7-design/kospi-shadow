@@ -58,6 +58,28 @@
       </div>
     </section>
 
+    <section class="section-block card probability-explanation">
+      <div class="section-title"><h2>상승확률이 이렇게 나온 이유</h2><span id="explanationMethod" class="muted">모델 분해</span></div>
+      <div class="probability-breakdown">
+        <div class="breakdown-item"><span>최종 상승확률</span><strong id="breakdownFinal">--</strong></div>
+        <div class="breakdown-item"><span>학습 기준확률</span><strong id="breakdownPrior">--</strong></div>
+        <div class="breakdown-item"><span>원모델 확률</span><strong id="breakdownRaw">--</strong></div>
+        <div class="breakdown-item"><span>원모델 반영비중</span><strong id="breakdownWeight">--</strong></div>
+      </div>
+      <p id="explanationSummary" class="explanation-summary">설명 데이터를 불러오는 중입니다.</p>
+      <div class="driver-columns">
+        <section class="driver-panel positive-panel">
+          <h3>상승 쪽 기여</h3>
+          <div id="positiveDrivers" class="driver-list"></div>
+        </section>
+        <section class="driver-panel negative-panel">
+          <h3>하락 쪽 기여</h3>
+          <div id="negativeDrivers" class="driver-list"></div>
+        </section>
+      </div>
+      <p id="explanationNote" class="explanation-note"></p>
+    </section>
+
     <section class="section-block card">
       <div class="section-title"><h2>한눈에 보는 핵심</h2><span class="muted">모델·시장·뉴스 종합</span></div>
       <div id="briefingList" class="briefing-grid"></div>

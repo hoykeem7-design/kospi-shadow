@@ -37,3 +37,14 @@ def test_netlify_headers_disable_browser_cache_for_live_data():
     assert "/data/*" in text
     assert "no-store" in text
     assert "/sw.js" in text
+
+
+
+def test_app_renders_probability_explanation_panel():
+    html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+    assert "상승확률이 이렇게 나온 이유" in html
+    assert 'id="positiveDrivers"' in html
+    assert 'id="negativeDrivers"' in html
+    assert "training_prior_probability" in javascript
+    assert "effect_probability_points" in javascript

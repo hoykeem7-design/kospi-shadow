@@ -83,6 +83,43 @@ function renderMarketCard(item) {
   return `<div class="market-item"><span class="market-name">${escapeHtml(item?.name)}</span><strong class="market-value">${fmtNum(item?.price)}</strong><span class="market-change ${clsFor(rate)}">${rate == null ? "데이터 없음" : `${rate >= 0 ? "+" : ""}${fmtPct(rate)}`}</span></div>`;
 }
 
+function fmtPp(value) {
+  if (value == null || Number.isNaN(Number(value))) return "--";
+  const number = Number(value) * 100;
+  return `${number >= 0 ? "+" : ""}${number.toFixed(1)}%p`;
+}
+
+function renderDriver(item, tone) {
+  return `<div class="driver-item ${tone}"><div class="driver-head"><strong>${escapeHtml(item?.label)}</strong><span>${fmtPp(item?.effect_probability_points)}</span></div><div class="driver-meta"><span>현재값 ${escapeHtml(safeText(item?.value_text))}</span><span>중간값 대비 민감도</span></div></div>`;
+}
+
+function renderProbabilityExplanation(data) {
+  const explanation = data?.prediction?.explanation;
+  if (!explanation) {
+    $("explanationMethod").textContent = "설명 없음";
+    $("breakdownFinal").textContent = fmtPct(data?.prediction?.probability_intraday_up, 1);
+    $("breakdownPrior").textContent = "--";
+    $("breakdownRaw").textContent = "--";
+    $("breakdownWeight").textContent = "--";
+    $("explanationSummary").textContent = "이 배포본에는 확률 분해 데이터가 없습니다. 다음 자동 배포 후 표시됩니다.";
+    $("positiveDrivers").innerHTML = `<p class="empty">표시할 요인이 없습니다.</p>`;
+    $("negativeDrivers").innerHTML = `<p class="empty">표시할 요인이 없습니다.</p>`;
+    $("explanationNote").textContent = "";
+    return;
+  }
+  $("explanationMethod").textContent = explanation.method === "one_feature_to_training_median" ? "학습 중간값 대비" : "모델 분해";
+  $("breakdownFinal").textContent = fmtPct(explanation.final_probability, 1);
+  $("breakdownPrior").textContent = fmtPct(explanation.training_prior_probability, 1);
+  $("breakdownRaw").textContent = fmtPct(explanation.raw_model_probability, 1);
+  $("breakdownWeight").textContent = fmtPct(explanation.model_weight, 0);
+  $("explanationSummary").textContent = safeText(explanation.summary, "확률 설명을 생성하지 못했습니다.");
+  const positives = explanation.positive_factors || [];
+  const negatives = explanation.negative_factors || [];
+  $("positiveDrivers").innerHTML = positives.length ? positives.map(item => renderDriver(item, "positive")).join("") : `<p class="empty">상승 기여가 거의 없습니다.</p>`;
+  $("negativeDrivers").innerHTML = negatives.length ? negatives.map(item => renderDriver(item, "negative")).join("") : `<p class="empty">하락 기여가 거의 없습니다.</p>`;
+  $("explanationNote").textContent = safeText(explanation.note, "");
+}
+
 function renderFreshness(data) {
   const generated = new Date(data.generated_at_seoul);
   const ageMinutes = Math.max(0, Math.floor((Date.now() - generated.getTime()) / 60000));
@@ -112,6 +149,7 @@ function render(data) {
   $("timingScore").textContent = `${fmtNum(data.coaching.timing_score,0)}점`;
   $("confidenceLabel").textContent = data.coaching.confidence_label;
   $("nextCheckpoint").textContent = `${data.coaching.next_checkpoint_at} ${data.coaching.next_checkpoint_label}`;
+  renderProbabilityExplanation(data);
   $("dataSource").textContent = `${safeText(data.data_quality.latest_source)} · ${safeText(data.data_quality.target_date_max)}`;
   $("briefingList").innerHTML = (data.briefing || []).length ? (data.briefing || []).map(item => `<div class="briefing-item"><strong><span class="briefing-mark ${item.tone}"></span>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.text)}</p></div>`).join("") : `<p class="empty">핵심 요약을 생성하지 못했습니다.</p>`;
 

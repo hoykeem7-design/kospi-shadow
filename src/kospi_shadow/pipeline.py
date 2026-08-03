@@ -68,6 +68,145 @@ def candidate_session_date(now_seoul: datetime, latest_target_date: pd.Timestamp
     return max(pd.Timestamp(decision_floor), pd.Timestamp(next_after_target)).normalize()
 
 
+_FACTOR_LABELS = {
+    "sp500": "S&P500",
+    "nasdaq": "NASDAQ",
+    "sox": "반도체지수",
+    "vix": "VIX",
+    "usdk_rw": "원·달러 환율",
+    "us10y": "미국 10년물 금리",
+    "us2y": "미국 2년물 금리",
+}
+
+
+def _feature_label(name: str) -> str:
+    if name.startswith("kospi_ret_lag_"):
+        return f"KOSPI {name.rsplit('_', 1)[-1]}거래일 전 수익률"
+    if name.startswith("kospi_mom_"):
+        return f"KOSPI {name.rsplit('_', 1)[-1]}일 모멘텀"
+    if name.startswith("kospi_vol_"):
+        return f"KOSPI {name.rsplit('_', 1)[-1]}일 변동성"
+    if name.startswith("kospi_ma_dist_"):
+        return f"KOSPI {name.rsplit('_', 1)[-1]}일 이동평균 괴리"
+    kospi_names = {
+        "kospi_prev_gap": "전일 시가 갭",
+        "kospi_prev_intraday": "전일 장중 수익률",
+        "kospi_prev_range": "전일 장중 변동폭",
+    }
+    if name in kospi_names:
+        return kospi_names[name]
+    for suffix, label_suffix in (
+        ("_level", "수준"),
+        ("_ret1", "1일 변화율"),
+        ("_ret5", "5일 변화율"),
+        ("_vol20", "20일 변동성"),
+    ):
+        if name.endswith(suffix):
+            base = name[: -len(suffix)]
+            return f"{_FACTOR_LABELS.get(base, base.upper())} {label_suffix}"
+    return name.replace("_", " ")
+
+
+def _format_feature_value(name: str, value: float) -> str:
+    percentage_tokens = ("ret", "mom", "vol", "ma_dist", "gap", "intraday", "range")
+    if any(token in name for token in percentage_tokens):
+        return f"{value:+.2%}"
+    return f"{value:,.2f}"
+
+
+def _build_prediction_explanation(
+    final_model: Any,
+    row: pd.DataFrame,
+    feature_cols: list[str],
+    final_probability: float,
+    *,
+    limit: int = 3,
+) -> dict[str, Any]:
+    """Explain the final probability without pretending to provide causality.
+
+    The deployed model blends a raw estimator probability with the historical
+    training prior.  Each local factor effect below is a one-feature
+    counterfactual: the current feature is replaced with the fitted imputer's
+    training median (by passing NaN), while all other features stay fixed.
+    This works for both the logistic and histogram-gradient candidates.
+    """
+    prior = float(getattr(final_model, "prior_probability", final_probability))
+    model_weight = float(getattr(final_model, "shrinkage", 1.0))
+    model_weight = max(0.0, min(1.0, model_weight))
+    estimator = getattr(final_model, "estimator", None)
+    try:
+        raw_probability = float(estimator.predict_proba(row)[:, 1][0]) if estimator is not None else final_probability
+    except Exception:
+        raw_probability = final_probability
+
+    records: list[dict[str, Any]] = []
+    excluded = {"day_of_week", "month"}
+    for feature in feature_cols:
+        if feature in excluded or feature.endswith("_age_days"):
+            continue
+        value = row.iloc[0][feature]
+        if pd.isna(value):
+            continue
+        counterfactual = row.copy()
+        counterfactual.loc[counterfactual.index[0], feature] = float("nan")
+        try:
+            neutral_probability = float(final_model.predict_proba(counterfactual)[:, 1][0])
+        except Exception:
+            continue
+        effect = float(final_probability - neutral_probability)
+        if abs(effect) < 0.00005:
+            continue
+        numeric_value = float(value)
+        records.append({
+            "feature": feature,
+            "label": _feature_label(feature),
+            "value": numeric_value,
+            "value_text": _format_feature_value(feature, numeric_value),
+            "effect_probability_points": effect,
+            "neutral_probability": neutral_probability,
+        })
+
+    positive = sorted((item for item in records if item["effect_probability_points"] > 0),
+                      key=lambda item: item["effect_probability_points"], reverse=True)[:limit]
+    negative = sorted((item for item in records if item["effect_probability_points"] < 0),
+                      key=lambda item: item["effect_probability_points"])[:limit]
+
+    if model_weight <= 0.05:
+        summary = (
+            f"최종 {final_probability:.1%}는 거의 전부 학습 기준확률 {prior:.1%}에서 왔습니다. "
+            f"검증 과정에서 원모델 반영비중이 {model_weight:.0%}로 축소되어, "
+            "오늘의 개별 변수보다 과거 학습구간의 장중 상승 빈도가 주된 이유입니다."
+        )
+    elif model_weight < 0.5:
+        summary = (
+            f"최종 {final_probability:.1%}는 학습 기준확률 {prior:.1%}를 {1.0-model_weight:.0%}, "
+            f"원모델 확률 {raw_probability:.1%}를 {model_weight:.0%} 반영한 값입니다. "
+            "따라서 당일 요인보다 장기 기준확률의 영향이 더 큽니다."
+        )
+    else:
+        summary = (
+            f"최종 {final_probability:.1%}는 학습 기준확률 {prior:.1%}와 "
+            f"원모델 확률 {raw_probability:.1%}를 결합한 값이며, 원모델 반영비중은 {model_weight:.0%}입니다."
+        )
+
+    return {
+        "method": "one_feature_to_training_median",
+        "final_probability": final_probability,
+        "training_prior_probability": prior,
+        "raw_model_probability": raw_probability,
+        "model_weight": model_weight,
+        "prior_weight": 1.0 - model_weight,
+        "summary": summary,
+        "positive_factors": positive,
+        "negative_factors": negative,
+        "feature_count_evaluated": len(records),
+        "note": (
+            "기여도는 해당 변수 하나만 학습 중간값으로 바꿔 본 국소 민감도입니다. "
+            "인과관계나 수익 보장을 뜻하지 않으며, 변수 간 상관 때문에 기여도의 합은 최종 확률과 정확히 일치하지 않습니다."
+        ),
+    }
+
+
 def _make_latest_prediction(
     final_model: Any,
     target: pd.DataFrame,
@@ -102,6 +241,7 @@ def _make_latest_prediction(
     if len(row) != 1:
         raise RuntimeError("Could not construct exactly one live feature row")
     probability = float(final_model.predict_proba(row)[:, 1][0])
+    explanation = _build_prediction_explanation(final_model, row, feature_cols, probability)
     threshold = float(model_cfg["probability_trade_threshold"])
     direction = "LONG" if probability >= threshold else ("SHORT" if probability <= 1.0 - threshold else "FLAT")
     before_open_cutoff = now_seoul.weekday() < 5 and now_seoul.hour < 9
@@ -134,6 +274,7 @@ def _make_latest_prediction(
         "trained_at_utc": trained_at_utc,
         "actionable": actionable,
         "actionable_reason": reason,
+        "explanation": explanation,
     }
 
 

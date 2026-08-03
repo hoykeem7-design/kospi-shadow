@@ -598,8 +598,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         futures=futures,
     )
     dashboard = {
-        "schema_version": 1,
-        "app_version": "4.1.0",
+        "schema_version": 2,
+        "app_version": "4.2.0",
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {
             "code": session.code,
