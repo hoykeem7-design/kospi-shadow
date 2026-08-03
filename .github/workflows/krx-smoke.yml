@@ -1,0 +1,29 @@
+name: KRX Secret Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify secret is present
+        shell: bash
+        run: |
+          if [ -z "$KRX_AUTH_KEY" ]; then
+            echo "KRX_AUTH_KEY is missing"
+            exit 2
+          fi
+      - run: pip install requests
+      - name: Call KRX official API without exposing the key
+        run: python scripts/krx_smoke_test.py

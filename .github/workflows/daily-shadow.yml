@@ -1,0 +1,62 @@
+name: Daily KOSPI Shadow
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 08:17 Asia/Seoul on weekdays. Non-zero minute reduces top-of-hour congestion.
+    - cron: "17 8 * * 1-5"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kospi-shadow-daily
+  cancel-in-progress: false
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Restore market-data cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            market-data-${{ runner.os }}-
+      - name: Verify required secret
+        shell: bash
+        run: |
+          if [ -z "$KRX_AUTH_KEY" ]; then
+            echo "KRX_AUTH_KEY is missing"
+            exit 2
+          fi
+      - run: pip install .
+      - name: Record environment
+        run: |
+          mkdir -p outputs
+          python --version > outputs/environment.txt
+          pip freeze >> outputs/environment.txt
+      - name: Run leakage-controlled shadow pipeline
+        shell: bash
+        run: |
+          set -o pipefail
+          kospi-shadow --config config/default.yml --project-root . 2>&1 | tee outputs/run.log
+      - name: Upload auditable outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kospi-shadow-${{ github.run_number }}
+          path: outputs/
+          if-no-files-found: error
+          retention-days: 90

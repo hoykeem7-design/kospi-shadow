@@ -1,0 +1,46 @@
+project:
+  name: kospi_shadow_auto_v2
+  timezone: Asia/Seoul
+  random_state: 20260731
+
+data:
+  start_date: "2010-01-04"
+  cache_dir: data/cache
+  target_provider: auto       # auto | krx | yahoo
+  krx_index_name_candidates: ["코스피", "KOSPI"]
+  yahoo_target_ticker: "^KS11"
+  external_tickers:
+    sp500: "^GSPC"
+    nasdaq: "^IXIC"
+    vix: "^VIX"
+    sox: "^SOX"
+    usdk_rw: "KRW=X"
+  fred_series:
+    us10y: "DGS10"
+    us2y: "DGS2"
+  request_timeout_seconds: 30
+  request_retries: 4
+  krx_pause_seconds: 0.12
+
+model:
+  target: intraday_up
+  return_column: intraday_return
+  horizon_sessions: 1
+  min_train_sessions: 504
+  outer_test_block_sessions: 21
+  inner_splits: 4
+  purge_gap_sessions: 1
+  refit_frequency_sessions: 21
+  probability_trade_threshold: 0.55
+  transaction_cost_bps_per_side: 5.0
+  max_feature_staleness_days: 7
+
+promotion:
+  min_oos_sessions: 252
+  min_brier_improvement: 0.0025
+  bootstrap_iterations: 1000
+  min_bootstrap_win_probability: 0.80
+  require_official_target: true
+  require_cost_adjusted_positive_return: true
+  require_sharpe_above_long_baseline: true
+  max_data_age_calendar_days: 7

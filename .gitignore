@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.joblib
+data/cache/*.csv
+outputs/*
+!outputs/.gitkeep
