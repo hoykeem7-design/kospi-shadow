@@ -17,4 +17,22 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[test]"
-      - run: pytest -q
+      - name: Run Python tests
+        run: pytest -q
+      - name: Parse workflow YAML
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          files = sorted(Path('.github/workflows').glob('*.yml'))
+          for path in files:
+              yaml.safe_load(path.read_text(encoding='utf-8'))
+          print(f'PyYAML PASS: {len(files)} workflow files')
+          PY
+      - name: Check PWA JavaScript syntax
+        run: |
+          node --check app/app.js
+          node --check app/sw.js
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2

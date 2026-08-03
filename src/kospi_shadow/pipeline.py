@@ -53,9 +53,17 @@ def promotion_gate(
 
 
 def candidate_session_date(now_seoul: datetime, latest_target_date: pd.Timestamp) -> pd.Timestamp:
+    """Choose the session that the dashboard should discuss.
+
+    Before the 15:30 regular-market close, repeated checkpoint runs retain the
+    current session target. After the close they roll to the next business day.
+    This prevents a 09:10 dashboard refresh from unexpectedly switching from
+    today's forecast to tomorrow's forecast.
+    """
     today = pd.Timestamp(now_seoul.date())
-    before_open = now_seoul.weekday() < 5 and now_seoul.hour < 9
-    decision_floor = today if before_open else today + pd.offsets.BDay(1)
+    weekday = now_seoul.weekday() < 5
+    before_regular_close = (now_seoul.hour, now_seoul.minute) < (15, 30)
+    decision_floor = today if weekday and before_regular_close else today + pd.offsets.BDay(1)
     next_after_target = latest_target_date.normalize() + pd.offsets.BDay(1)
     return max(pd.Timestamp(decision_floor), pd.Timestamp(next_after_target)).normalize()
 
@@ -98,6 +106,12 @@ def _make_latest_prediction(
     direction = "LONG" if probability >= threshold else ("SHORT" if probability <= 1.0 - threshold else "FLAT")
     before_open_cutoff = now_seoul.weekday() < 5 and now_seoul.hour < 9
     timing_valid = before_open_cutoff and candidate_date.date() == now_seoul.date()
+    if candidate_date.date() > now_seoul.date():
+        prediction_scope = "next_session_plan"
+    elif before_open_cutoff:
+        prediction_scope = "preopen_full_session"
+    else:
+        prediction_scope = "current_session_reference_not_remaining_session_probability"
     actionable = bool(gate["signal_enabled"] and timing_valid)
     if not gate["signal_enabled"]:
         reason = "Model promotion gate is closed; research output only."
@@ -116,6 +130,7 @@ def _make_latest_prediction(
         "model_gate_signal_enabled": bool(gate["signal_enabled"]),
         "timing_before_09_00": before_open_cutoff,
         "timing_valid_for_target": timing_valid,
+        "prediction_scope": prediction_scope,
         "trained_at_utc": trained_at_utc,
         "actionable": actionable,
         "actionable_reason": reason,
@@ -352,7 +367,7 @@ def _write_model_card(output_dir: Path, metrics: dict[str, Any]) -> None:
     pred = metrics["latest_prediction"]
     manifest = metrics["data_manifest"]
     cls = metrics["classification"]
-    card = f"""# KOSPI SHADOW AUTO v3.2 — Model Card
+    card = f"""# KOSPI SHADOW COACH v4.0 — Model Card
 
 ## Status
 

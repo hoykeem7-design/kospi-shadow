@@ -31,3 +31,14 @@ def test_candidate_session_rolls_after_open():
     now = datetime(2026, 8, 3, 17, 20, tzinfo=ZoneInfo("Asia/Seoul"))
     candidate = candidate_session_date(now, pd.Timestamp("2026-07-31"))
     assert candidate == pd.Timestamp("2026-08-04")
+
+
+def test_candidate_session_stays_on_current_day_during_market():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import pandas as pd
+    from kospi_shadow.pipeline import candidate_session_date
+
+    now = datetime(2026, 8, 3, 9, 10, tzinfo=ZoneInfo("Asia/Seoul"))
+    candidate = candidate_session_date(now, pd.Timestamp("2026-07-31"))
+    assert candidate == pd.Timestamp("2026-08-03")

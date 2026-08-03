@@ -21,6 +21,7 @@ KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 KIS_TOKEN_ENDPOINT = "/oauth2/tokenP"
 KIS_INDEX_DAILY_ENDPOINT = "/uapi/domestic-stock/v1/quotations/inquire-index-daily-price"
 KIS_INDEX_DAILY_TR_ID = "FHPUP02120000"
+_KIS_TOKEN_CACHE: dict[str, tuple[str, datetime]] = {}
 
 
 @dataclass(frozen=True)
@@ -97,10 +98,15 @@ def fetch_kis_access_token(
     timeout: int,
     retries: int,
     base_url: str = KIS_BASE_URL,
+    force_refresh: bool = False,
 ) -> str:
     app_key, app_secret = _kis_credentials()
     if not app_key or not app_secret:
         raise RuntimeError("KIS_APP_KEY and KIS_APP_SECRET must both be set")
+    cached = _KIS_TOKEN_CACHE.get(app_key)
+    now_utc = datetime.now(timezone.utc)
+    if not force_refresh and cached is not None and cached[1] > now_utc + timedelta(minutes=2):
+        return cached[0]
     response = _retry_post_json(
         f"{base_url}{KIS_TOKEN_ENDPOINT}",
         payload={
@@ -116,6 +122,17 @@ def fetch_kis_access_token(
     token = str(payload.get("access_token", "")).strip()
     if not token:
         raise RuntimeError(f"KIS token response missing access_token: {json.dumps(payload, ensure_ascii=False)[:300]}")
+    expires_at = now_utc + timedelta(hours=23)
+    expiry_text = str(payload.get("access_token_token_expired", "")).strip()
+    if expiry_text:
+        try:
+            parsed = pd.Timestamp(expiry_text)
+            if parsed.tzinfo is None:
+                parsed = parsed.tz_localize(ZoneInfo("Asia/Seoul"))
+            expires_at = parsed.tz_convert("UTC").to_pydatetime()
+        except Exception:
+            pass
+    _KIS_TOKEN_CACHE[app_key] = (token, expires_at)
     return token
 
 

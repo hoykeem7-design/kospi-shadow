@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="KOSPI 확률 예측과 시장 시간대별 코칭을 한 화면에서 확인하는 개인 연구용 앱">
+  <title>KOSPI Shadow Coach</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">KOSPI SHADOW</p>
+      <h1>Market Coach</h1>
+    </div>
+    <div class="header-actions">
+      <button id="installButton" class="ghost hidden">앱 설치</button>
+      <button id="refreshButton" class="icon-button" aria-label="새로고침">↻</button>
+    </div>
+  </header>
+
+  <main id="app" class="container" aria-live="polite">
+    <section class="hero card">
+      <div class="session-row">
+        <span id="sessionBadge" class="badge">불러오는 중</span>
+        <span id="generatedAt" class="muted"></span>
+      </div>
+      <h2 id="sessionTitle">시장 상태 확인 중</h2>
+      <p id="sessionDescription" class="muted"></p>
+      <div class="hero-grid">
+        <div class="probability-wrap">
+          <div id="gauge" class="gauge" style="--p:50">
+            <div>
+              <span class="gauge-label">상승 확률</span>
+              <strong id="probability">--</strong>
+            </div>
+          </div>
+          <div class="target-copy">
+            <span class="muted">예측 대상</span>
+            <strong id="targetDate">--</strong>
+            <span id="directionBadge" class="direction flat">FLAT</span>
+          </div>
+        </div>
+        <div id="coachCard" class="coach-box">
+          <span class="muted">지금 코칭</span>
+          <h3 id="coachHeadline">데이터 확인 중</h3>
+          <p id="coachRationale"></p>
+          <div class="coach-meta">
+            <span>타이밍 점수 <b id="timingScore">--</b></span>
+            <span>확신도 <b id="confidenceLabel">--</b></span>
+          </div>
+          <p class="next-check">다음 확인: <b id="nextCheckpoint">--</b></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block card">
+      <div class="section-title"><h2>한눈에 보는 핵심</h2><span class="muted">모델·시장·뉴스 종합</span></div>
+      <div id="briefingList" class="briefing-grid"></div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-title"><h2>시장 스냅샷</h2><span id="dataSource" class="muted"></span></div>
+      <div id="marketGrid" class="market-grid"></div>
+    </section>
+
+    <section class="section-block card">
+      <div class="section-title"><h2>오늘의 체크포인트</h2><span class="muted">시간대별 코칭</span></div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section class="two-column">
+      <section class="card section-block">
+        <div class="section-title"><h2>주요 기사</h2><span class="muted">제목 기반 분류</span></div>
+        <div id="newsList" class="list"></div>
+      </section>
+      <section class="card section-block">
+        <div class="section-title"><h2>주요 발표</h2><span class="muted">향후 7일</span></div>
+        <div id="eventList" class="list"></div>
+      </section>
+    </section>
+
+    <section class="two-column">
+      <section class="card section-block">
+        <div class="section-title"><h2>모델 건강도</h2><span id="modelStatus" class="badge"></span></div>
+        <dl id="modelMetrics" class="metric-list"></dl>
+      </section>
+      <section class="card section-block">
+        <div class="section-title"><h2>데이터 상태</h2><span id="officialBadge" class="badge"></span></div>
+        <dl id="dataMetrics" class="metric-list"></dl>
+        <div id="warningList" class="warning-list"></div>
+      </section>
+    </section>
+
+    <section class="notice">
+      <strong>연구용 코칭</strong>
+      <p>이 앱은 자동주문이나 수익 보장 도구가 아닙니다. 현재 모델 승격 기준이 닫혀 있으면 항상 관망을 우선합니다.</p>
+    </section>
+  </main>
+
+  <div id="errorToast" class="toast hidden"></div>
+  <script src="data/initial-data.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

@@ -2,10 +2,6 @@ name: Daily KOSPI Shadow
 
 on:
   workflow_dispatch:
-  schedule:
-    # 08:05 Asia/Seoul on weekdays. Auto mode predicts from cached weekly state.
-    - cron: "5 8 * * 1-5"
-      timezone: "Asia/Seoul"
 
 permissions:
   contents: read

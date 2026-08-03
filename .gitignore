@@ -6,3 +6,5 @@ data/cache/*.csv
 outputs/*
 !outputs/.gitkeep
 state/
+app_state/
+site/

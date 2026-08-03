@@ -1,3 +1,3 @@
-"""KOSPI SHADOW v3.2: research-only, leakage-controlled forecasting."""
+"""KOSPI SHADOW v4.0: research-only, leakage-controlled forecasting."""
 
-__version__ = "3.2.0"
+__version__ = "4.0.0"

@@ -1,0 +1,14 @@
+{
+  "name": "KOSPI Shadow Market Coach",
+  "short_name": "KOSPI Coach",
+  "description": "KOSPI 확률 예측과 시간대별 시장 코칭",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#0b1020",
+  "lang": "ko-KR",
+  "icons": [
+    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}

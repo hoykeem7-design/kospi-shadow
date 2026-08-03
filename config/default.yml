@@ -1,5 +1,5 @@
 project:
-  name: kospi_shadow_auto_v3_2
+  name: kospi_shadow_coach_v4
   timezone: Asia/Seoul
   random_state: 20260731
 
@@ -52,3 +52,8 @@ promotion:
   require_cost_adjusted_positive_return: true
   require_sharpe_above_long_baseline: true
   max_data_age_calendar_days: 7
+
+coach:
+  news_query: "코스피 OR 증시 OR 환율 OR 금리 OR 반도체"
+  news_limit: 12
+  event_horizon_days: 7

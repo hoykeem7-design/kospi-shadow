@@ -1,3 +1,18 @@
+# KOSPI Shadow Coach v4
+
+기존 누수 통제형 KOSPI 예측 파이프라인에 **시간대별 시장 코칭 PWA**를 결합한 개인 연구용 앱입니다.
+
+## 앱 기능
+
+- 07:45 장전, 08:10 NXT 확인, 08:47 선물, 09:10 본장, 12:00, 15:20, 20:05 자동 업데이트
+- KOSPI 확률, KIS KOSPI/KOSPI200 선물, 미국 지수·VIX·환율·금리, 뉴스·발표 캘린더 통합
+- 모델 승격 기준이 닫혀 있으면 매수 코칭을 자동 차단
+- PWA 설치 지원. `ENABLE_GITHUB_PAGES=true` 저장소 변수를 설정하면 Pages 자동 배포
+
+> 앱의 타이밍 코칭은 실시간 확인 레이어이며, 기존 일간 모델 자체가 분 단위 최적 진입시각을 학습한 것은 아닙니다. 자동주문 기능은 없습니다.
+
+---
+
 # KOSPI SHADOW AUTO v3.2
 
 Research-only KOSPI pre-open forecasting pipeline. It fails closed: probabilities may be produced, but `signal_enabled` stays false unless every promotion check passes.

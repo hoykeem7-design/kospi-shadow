@@ -1,0 +1,106 @@
+name: KOSPI Shadow Coach App
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 7 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "10 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "47 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "10 9 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "0 12 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "20 15 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "5 20 * * 1-5"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: kospi-shadow-coach
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Restore market data
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            market-data-${{ runner.os }}-
+      - name: Restore trained state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: model-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            model-state-${{ runner.os }}-
+      - name: Restore coach history
+        uses: actions/cache@v4
+        with:
+          path: app_state
+          key: coach-history-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            coach-history-${{ runner.os }}-
+      - name: Verify secrets
+        shell: bash
+        run: |
+          test -n "$KRX_AUTH_KEY" || { echo "KRX_AUTH_KEY is missing"; exit 2; }
+          test -n "$FRED_API_KEY" || { echo "FRED_API_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+      - run: pip install .
+      - name: Refresh prediction and build session-aware PWA
+        run: kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+      - name: Publish summary
+        shell: bash
+        run: |
+          cat outputs/daily_brief.md >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Coach PWA artifact generated." >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload installable app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kospi-shadow-coach-${{ github.run_number }}
+          path: site/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Pages artifact
+        if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy:
+    if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy app to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
