@@ -1,23 +1,23 @@
-name: Daily KOSPI Shadow
+name: Weekly KOSPI Shadow Retrain
 
 on:
   workflow_dispatch:
   schedule:
-    # 08:05 Asia/Seoul on weekdays. Auto mode predicts from cached weekly state.
-    - cron: "5 8 * * 1-5"
+    # Saturday 09:10 Asia/Seoul: full validation and model-state refresh.
+    - cron: "10 9 * * 6"
       timezone: "Asia/Seoul"
 
 permissions:
   contents: read
 
 concurrency:
-  group: kospi-shadow-daily
-  cancel-in-progress: true
+  group: kospi-shadow-training
+  cancel-in-progress: false
 
 jobs:
-  shadow:
+  train:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
@@ -35,40 +35,31 @@ jobs:
           key: market-data-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             market-data-${{ runner.os }}-
-      - name: Restore trained-state cache
+      - name: Restore previous trained state
         uses: actions/cache@v4
         with:
           path: state
           key: model-state-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             model-state-${{ runner.os }}-
-      - name: Verify required secrets
-        shell: bash
-        run: |
-          test -n "$KRX_AUTH_KEY" || { echo "KRX_AUTH_KEY is missing"; exit 2; }
-          test -n "$FRED_API_KEY" || { echo "FRED_API_KEY is missing"; exit 2; }
       - run: pip install .
-      - name: Record environment
+      - name: Full leakage-controlled validation and refit
+        shell: bash
         run: |
           rm -rf outputs
           mkdir -p outputs
-          python --version > outputs/environment.txt
-          pip freeze >> outputs/environment.txt
-      - name: Refresh data and generate next-session prediction
-        shell: bash
-        run: |
           set -o pipefail
-          kospi-shadow --mode auto --config config/default.yml --project-root . 2>&1 | tee outputs/run.log
+          kospi-shadow --mode full --config config/default.yml --project-root . 2>&1 | tee outputs/run.log
       - name: Publish GitHub job summary
         if: always()
         shell: bash
         run: |
           if [ -f outputs/daily_brief.md ]; then cat outputs/daily_brief.md >> "$GITHUB_STEP_SUMMARY"; fi
-      - name: Upload auditable outputs
+      - name: Upload full audit bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kospi-shadow-${{ github.run_number }}
+          name: kospi-shadow-weekly-${{ github.run_number }}
           path: outputs/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 180

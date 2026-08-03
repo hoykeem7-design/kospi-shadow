@@ -1,62 +1,37 @@
-# KOSPI SHADOW AUTO v2 — Verified Build
+# KOSPI SHADOW AUTO v3
 
-This repository is a research-only KOSPI pre-open forecasting pipeline. It is designed to **fail closed**: a model may be trained and audited, but `signal_enabled` remains false unless every promotion requirement passes.
+Research-only KOSPI pre-open forecasting pipeline. It fails closed: probabilities may be produced, but `signal_enabled` stays false unless every promotion check passes.
 
-## What was corrected from the earlier proposal
+## v3 upgrades
 
-- No claim that browser scraping is the most accurate or most reliable source.
-- No claim that Yahoo Finance is official; it is fallback-only.
-- No unnecessary XGBoost/LightGBM/CatBoost model zoo. More candidate models increase selection bias unless nested validation and multiple-testing controls are expanded.
-- No arbitrary “4,000–8,000 lines” estimate.
-- No claim of successful live retraining without current synchronized data and actual test logs.
-- GitHub Actions is treated as best-effort scheduling, not an exact-time production scheduler.
+- **Daily prediction and weekly retraining are separated.** Daily runs reuse cached model state and should normally finish in minutes, not nearly an hour.
+- KRX, Yahoo and FRED data are incrementally cached.
+- Yahoo factors are downloaded in one batch. Factor features use Close only, fixing the false `KRW=X` OHLC consistency rejection.
+- The next-session date rolls forward after 09:00, so an evening run no longer labels the already-finished session as the candidate target.
+- Walk-forward validation uses a compact candidate set and quarterly test blocks to reduce runtime.
+- Candidate probabilities are shrunk toward the training prior using inner time-series CV. This reduces overconfident weak signals and permits a prior-only result when models add no value.
+- Progress and runtime timings are printed during data collection and validation.
+- Every run creates `daily_brief.md` and publishes it in the GitHub job summary.
 
-## Data hierarchy
+## Workflows
 
-1. **KRX OPEN API** for the KOSPI target series. Requires `KRX_AUTH_KEY` and per-service approval.
-2. **FRED API** for Treasury yields. Requires `FRED_API_KEY`.
-3. **Yahoo via yfinance** for US-market factors and as an unofficial target fallback.
+- **Daily KOSPI Shadow**: weekdays at 08:05 Asia/Seoul. Uses `--mode auto`; predicts from a model no older than eight days, or bootstraps a full train when state is missing.
+- **Weekly KOSPI Shadow Retrain**: Saturday at 09:10 Asia/Seoul. Runs complete validation and refreshes model state.
+- **KRX Secret Smoke Test**: manual authentication check.
 
-A Yahoo target fallback automatically fails the official-source promotion check.
-
-## Leakage controls
-
-- KOSPI technical predictors are shifted by at least one session.
-- External factors use `merge_asof(..., allow_exact_matches=False)`: a factor dated `t` cannot be used for KOSPI date `t`.
-- Outer evaluation is expanding walk-forward.
-- Candidate selection occurs only inside each outer training window.
-- Inner time splits include a purge gap.
-- Baseline probability is calculated from each outer training window only.
-
-## Run locally
-
-```bash
-export KRX_AUTH_KEY="..."   # optional, but required for official target status
-export FRED_API_KEY="..."  # optional; missing FRED factors are logged
-python -m pip install -e ".[test]"
-pytest -q
-kospi-shadow --config config/default.yml --project-root .
-```
-
-Outputs are written to `outputs/`:
-
-- `metrics.json`
-- `oos_predictions.csv`
-- `model_card.md`
-- `challenger_model.joblib`
-- `data_manifest.json`
-- `feature_columns.json`
-- `latest_prediction.json`
-
-## GitHub setup
-
-Add repository secrets:
+GitHub repository secrets:
 
 - `KRX_AUTH_KEY`
 - `FRED_API_KEY`
 
-Run **KRX Secret Smoke Test** manually first. After it passes, the daily workflow runs at 08:17 Asia/Seoul on weekdays and can also be run manually. GitHub scheduled workflows can be delayed; the workflow is therefore not suitable for guaranteed order-timing.
+## Outputs
 
-## Important limitation
+- `daily_brief.md` — easiest human-readable result
+- `latest_prediction.json`
+- `metrics.json`
+- `model_card.md`
+- full runs additionally produce `oos_predictions.csv`, `feature_tail.csv`, and the model file
 
-The cost-adjusted strategy charges two transaction-cost sides per non-zero intraday position, but is still an **index-return proxy**, not a real ETF or futures execution backtest. The system should not be promoted to real-money use until a tradable instrument, spread, fees, taxes, slippage, and fill rules are modeled from point-in-time data.
+## Interpretation
+
+`LONG`, `FLAT`, and `SHORT` are research labels, not orders. The system does not model a tradable ETF/futures order book, taxes, spread, slippage, or guaranteed scheduled execution. Do not trade solely from this output.

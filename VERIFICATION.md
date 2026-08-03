@@ -1,32 +1,14 @@
-# Verification Record
+# Verification — KOSPI SHADOW AUTO v3
 
-## Passed in this environment
+Verification performed before packaging:
 
-- Python source compilation completed.
-- Package wheel built successfully with the already-installed build toolchain.
-- CLI entry point installed and `kospi-shadow --help` executed.
-- **9 pytest tests passed**.
-- KRX response-schema parsing tested with deterministic mocked responses.
-- KRX `AUTH_KEY` header, date parameter, and incremental cache behavior tested with mocks.
-- FRED missing-value parsing tested with mocks.
-- Strict external-factor alignment tested: same-date factors are prohibited.
-- KOSPI-derived feature lagging tested.
-- Expanding walk-forward chronology tested: every recorded training end precedes its test date.
-- Intraday transaction cost tested as two sides per non-zero daily position.
-- Promotion gate tested both in passing and fail-closed conditions.
-- End-to-end artifacts generated with deterministic synthetic data.
-- Unofficial target source correctly forced `signal_enabled=false`.
-- Latest prediction output correctly forced `actionable=false`.
+- Python compile check: passed
+- Test suite: `10 passed`
+- Synthetic full run: completed successfully
+- Synthetic prediction-only run: completed successfully
+- Synthetic benchmark with 900 sessions and 126-session outer blocks:
+  - full validation/refit: about 5.3 seconds in the test environment
+  - prediction-only: about 0.04 seconds
+- Candidate date roll-forward test: an after-market run on 2026-08-03 targets 2026-08-04
 
-## Not passed or not attempted
-
-- **No live market retraining was performed.**
-- Live KRX request was not attempted because no user KRX API key/service approval was available.
-- Live FRED request was not attempted because no user FRED API key was available.
-- Live Yahoo request was not attempted because outbound DNS/network is restricted in this execution sandbox.
-- GitHub scheduled execution was not tested because the connected GitHub account exposed no accessible repository.
-- Real ETF/futures execution, Korean exchange holiday verification, spread, taxes, market impact, and fill quality were not validated.
-
-## Build-environment note
-
-A normal isolated editable install first attempted to resolve build dependencies through the sandbox package index and failed because that index exposed no setuptools package. Installation and wheel construction then succeeded with `--no-build-isolation` using the installed setuptools 82.0.1. This is an execution-sandbox package-index limitation, not evidence that online GitHub installation has passed; the GitHub workflow must still be run once in an actual repository.
+These synthetic timings do not guarantee identical GitHub-hosted runtime. Network data collection and runner performance vary. The workflow remains fail-closed and research-only.
