@@ -179,3 +179,78 @@ def test_fetch_krx_rechecks_recent_checked_date(monkeypatch, tmp_path: Path):
 
     assert calls == ["20260803"]
     assert result["Date"].max() == pd.Timestamp("2026-08-03")
+
+
+def test_parse_kis_index_rows():
+    rows = [{
+        "stck_bsop_date": "20260803",
+        "bstp_nmix_oprc": "3,210.10",
+        "bstp_nmix_hgpr": "3,240.20",
+        "bstp_nmix_lwpr": "3,200.00",
+        "bstp_nmix_prpr": "3,230.50",
+        "acml_vol": "456,789,000",
+    }]
+    frame = data_module._parse_kis_index_rows(rows)
+    assert frame.loc[0, "Date"] == pd.Timestamp("2026-08-03")
+    assert frame.loc[0, "Close"] == 3230.5
+    assert frame.loc[0, "Volume"] == 456789000
+
+
+def test_fetch_kis_kospi_recent_uses_official_headers(monkeypatch):
+    calls = []
+
+    def fake_post(url, *, payload, headers=None, timeout=30, retries=4):
+        calls.append(("post", url, payload, headers))
+        return FakeResponse({"access_token": "token-value"})
+
+    def fake_get(url, *, params=None, headers=None, timeout=30, retries=4):
+        calls.append(("get", url, params, headers))
+        return FakeResponse({
+            "rt_cd": "0",
+            "msg_cd": "MCA00000",
+            "msg1": "ok",
+            "output2": [{
+                "stck_bsop_date": "20260803",
+                "bstp_nmix_oprc": "3210.10",
+                "bstp_nmix_hgpr": "3240.20",
+                "bstp_nmix_lwpr": "3200.00",
+                "bstp_nmix_prpr": "3230.50",
+                "acml_vol": "456789000",
+            }],
+        })
+
+    monkeypatch.setenv("KIS_APP_KEY", "app-key")
+    monkeypatch.setenv("KIS_APP_SECRET", "app-secret")
+    monkeypatch.setattr(data_module, "_retry_post_json", fake_post)
+    monkeypatch.setattr(data_module, "_retry_get", fake_get)
+    frame = data_module.fetch_kis_kospi_recent(
+        as_of_date="2026-08-03", timeout=3, retries=1
+    )
+    assert len(frame) == 1
+    _, _, params, headers = calls[1]
+    assert params["FID_COND_MRKT_DIV_CODE"] == "U"
+    assert params["FID_INPUT_ISCD"] == "0001"
+    assert params["FID_INPUT_DATE_1"] == "20260803"
+    assert headers["tr_id"] == "FHPUP02120000"
+    assert headers["authorization"] == "Bearer token-value"
+
+
+def test_merge_provisional_rows_only_adds_new_eligible_dates():
+    official = pd.DataFrame({
+        "Date": pd.to_datetime(["2026-07-31"]),
+        "Open": [3100.0], "High": [3120.0], "Low": [3090.0], "Close": [3110.0], "Volume": [1000.0],
+    })
+    kis = pd.DataFrame({
+        "Date": pd.to_datetime(["2026-07-31", "2026-08-03", "2026-08-04"]),
+        "Open": [3101.0, 3200.0, 3300.0],
+        "High": [3121.0, 3220.0, 3320.0],
+        "Low": [3091.0, 3190.0, 3290.0],
+        "Close": [3111.0, 3210.0, 3310.0],
+        "Volume": [1001.0, 2000.0, 3000.0],
+    })
+    merged, dates = data_module._merge_provisional_rows(
+        official, kis, max_date=pd.Timestamp("2026-08-03")
+    )
+    assert dates == ["2026-08-03"]
+    assert merged["Date"].max() == pd.Timestamp("2026-08-03")
+    assert merged.loc[merged["Date"] == pd.Timestamp("2026-07-31"), "Close"].iloc[0] == 3110.0

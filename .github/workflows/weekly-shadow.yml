@@ -21,6 +21,8 @@ jobs:
     env:
       KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4

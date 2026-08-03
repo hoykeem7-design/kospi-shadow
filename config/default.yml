@@ -1,5 +1,5 @@
 project:
-  name: kospi_shadow_auto_v3_1
+  name: kospi_shadow_auto_v3_2
   timezone: Asia/Seoul
   random_state: 20260731
 
@@ -9,6 +9,10 @@ data:
   target_provider: auto       # auto | krx | yahoo
   krx_index_name_candidates: ["코스피", "KOSPI"]
   yahoo_target_ticker: "^KS11"
+  kis_provisional_fallback: true
+  kis_market_code: "U"
+  kis_index_code: "0001"
+  kis_current_day_cutoff_time: "15:45"
   external_tickers:
     sp500: "^GSPC"
     nasdaq: "^IXIC"

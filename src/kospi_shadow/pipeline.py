@@ -208,7 +208,7 @@ def _run_full(settings: Settings, project_root: Path, bundle: DataBundle | None 
 
     _log("mode=full: collect data and perform walk-forward validation")
     if bundle is None:
-        bundle = collect_data(data_cfg, project_root)
+        bundle = collect_data(data_cfg, project_root, allow_provisional=False)
     feature_started = time.perf_counter()
     feature_table, feature_cols = build_feature_table(
         bundle.target,
@@ -317,7 +317,7 @@ def _run_predict(settings: Settings, project_root: Path, bundle: DataBundle | No
     feature_cols = json.loads(paths["features"].read_text(encoding="utf-8"))
     model = joblib.load(paths["model"])
     if bundle is None:
-        bundle = collect_data(data_cfg, project_root)
+        bundle = collect_data(data_cfg, project_root, allow_provisional=True)
     gate = promotion_gate(training_metrics, bundle.manifest, promotion_cfg)
     latest_prediction = _make_latest_prediction(
         model,
@@ -352,7 +352,7 @@ def _write_model_card(output_dir: Path, metrics: dict[str, Any]) -> None:
     pred = metrics["latest_prediction"]
     manifest = metrics["data_manifest"]
     cls = metrics["classification"]
-    card = f"""# KOSPI SHADOW AUTO v3.1 — Model Card
+    card = f"""# KOSPI SHADOW AUTO v3.2 — Model Card
 
 ## Status
 

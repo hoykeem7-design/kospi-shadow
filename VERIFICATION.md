@@ -1,4 +1,4 @@
-# Verification — KOSPI SHADOW AUTO v3.1
+# Verification — KOSPI SHADOW AUTO v3.2
 
 Verification performed before packaging:
 
@@ -12,3 +12,10 @@ Verification performed before packaging:
 - Candidate date roll-forward test: an after-market run on 2026-08-03 targets 2026-08-04
 
 These synthetic timings do not guarantee identical GitHub-hosted runtime. Network data collection and runner performance vary. The workflow remains fail-closed and research-only.
+
+
+## v3.2 checks
+
+- 15 pytest tests, including KIS token/header/schema and provisional-date merge tests.
+- Five GitHub Actions YAML files parse with PyYAML.
+- KIS credentials are read only from environment variables and never written to outputs.

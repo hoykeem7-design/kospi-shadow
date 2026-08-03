@@ -1,12 +1,20 @@
-# KOSPI SHADOW AUTO v3.1
+# KOSPI SHADOW AUTO v3.2
 
 Research-only KOSPI pre-open forecasting pipeline. It fails closed: probabilities may be produced, but `signal_enabled` stays false unless every promotion check passes.
 
-## v3.1 fixes
+## v3.2 fixes
 
 - Fixes Yahoo batch factors failing with `Date is both an index level and a column label`.
 - Rechecks the most recent five KRX business dates so a session queried before publication is not permanently skipped.
 - Keeps the fast cached daily-prediction design introduced in v3.
+
+## v3.2 KIS provisional close fallback
+
+- Daily prediction keeps KRX as the official history.
+- When the newest KRX daily row is delayed, the KIS domestic-index daily endpoint may append newer KOSPI rows as `kis_provisional`.
+- Same-day KIS rows are accepted only after 15:45 Asia/Seoul to avoid ingesting an incomplete trading session.
+- Weekly/full retraining excludes provisional KIS rows; only daily prediction may use them.
+- A provisional latest row forces `target_official=false`, so the production signal remains disabled until KRX publishes the official row.
 
 ## v3 upgrades
 
@@ -23,12 +31,15 @@ Research-only KOSPI pre-open forecasting pipeline. It fails closed: probabilitie
 
 - **Daily KOSPI Shadow**: weekdays at 08:05 Asia/Seoul. Uses `--mode auto`; predicts from a model no older than eight days, or bootstraps a full train when state is missing.
 - **Weekly KOSPI Shadow Retrain**: Saturday at 09:10 Asia/Seoul. Runs complete validation and refreshes model state.
-- **KRX Secret Smoke Test**: manual authentication check.
+- **KRX Secret Smoke Test**: manual KRX authentication check.
+- **KIS Index Smoke Test**: manual KIS token and KOSPI daily-index check.
 
 GitHub repository secrets:
 
 - `KRX_AUTH_KEY`
 - `FRED_API_KEY`
+- `KIS_APP_KEY`
+- `KIS_APP_SECRET`
 
 ## Outputs
 

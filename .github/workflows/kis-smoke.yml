@@ -1,0 +1,30 @@
+name: KIS Index Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Verify KIS secrets
+        shell: bash
+        run: |
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+      - run: pip install .
+      - name: Call KIS KOSPI daily-index API without exposing secrets
+        run: python scripts/kis_smoke_test.py

@@ -17,6 +17,10 @@ import requests
 
 KRX_KOSPI_ENDPOINT = "https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd"
 FRED_OBSERVATIONS_ENDPOINT = "https://api.stlouisfed.org/fred/series/observations"
+KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
+KIS_TOKEN_ENDPOINT = "/oauth2/tokenP"
+KIS_INDEX_DAILY_ENDPOINT = "/uapi/domestic-stock/v1/quotations/inquire-index-daily-price"
+KIS_INDEX_DAILY_TR_ID = "FHPUP02120000"
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,140 @@ def _retry_get(
             if attempt + 1 < retries:
                 time.sleep(min(2**attempt, 8))
     raise RuntimeError(f"GET failed after {retries} attempts: {url}: {last_error}")
+
+
+def _retry_post_json(
+    url: str,
+    *,
+    payload: dict[str, Any],
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+    retries: int = 4,
+) -> requests.Response:
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if response.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"transient HTTP {response.status_code}")
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < retries:
+                time.sleep(min(2**attempt, 8))
+    raise RuntimeError(f"POST failed after {retries} attempts: {url}: {last_error}")
+
+
+def _kis_credentials() -> tuple[str, str]:
+    return os.getenv("KIS_APP_KEY", "").strip(), os.getenv("KIS_APP_SECRET", "").strip()
+
+
+def fetch_kis_access_token(
+    *,
+    timeout: int,
+    retries: int,
+    base_url: str = KIS_BASE_URL,
+) -> str:
+    app_key, app_secret = _kis_credentials()
+    if not app_key or not app_secret:
+        raise RuntimeError("KIS_APP_KEY and KIS_APP_SECRET must both be set")
+    response = _retry_post_json(
+        f"{base_url}{KIS_TOKEN_ENDPOINT}",
+        payload={
+            "grant_type": "client_credentials",
+            "appkey": app_key,
+            "appsecret": app_secret,
+        },
+        headers={"Content-Type": "application/json", "Accept": "text/plain", "charset": "UTF-8"},
+        timeout=timeout,
+        retries=retries,
+    )
+    payload = response.json()
+    token = str(payload.get("access_token", "")).strip()
+    if not token:
+        raise RuntimeError(f"KIS token response missing access_token: {json.dumps(payload, ensure_ascii=False)[:300]}")
+    return token
+
+
+def _parse_kis_index_rows(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame(columns=["Date", "Open", "High", "Low", "Close", "Volume"])
+    parsed = pd.DataFrame({
+        "Date": [r.get("stck_bsop_date") for r in rows],
+        "Open": [r.get("bstp_nmix_oprc") for r in rows],
+        "High": [r.get("bstp_nmix_hgpr") for r in rows],
+        "Low": [r.get("bstp_nmix_lwpr") for r in rows],
+        "Close": [r.get("bstp_nmix_prpr") for r in rows],
+        "Volume": [r.get("acml_vol", 0) for r in rows],
+    })
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        parsed[col] = parsed[col].astype(str).str.replace(",", "", regex=False).replace({"-": np.nan, "": np.nan})
+    return _normalise_ohlcv(parsed, "kis-index-daily", strict_ohlc=True)
+
+
+def fetch_kis_kospi_recent(
+    *,
+    as_of_date: str,
+    timeout: int,
+    retries: int,
+    market_code: str = "U",
+    index_code: str = "0001",
+    base_url: str = KIS_BASE_URL,
+) -> pd.DataFrame:
+    app_key, app_secret = _kis_credentials()
+    if not app_key or not app_secret:
+        raise RuntimeError("KIS_APP_KEY and KIS_APP_SECRET must both be set")
+    token = fetch_kis_access_token(timeout=timeout, retries=retries, base_url=base_url)
+    response = _retry_get(
+        f"{base_url}{KIS_INDEX_DAILY_ENDPOINT}",
+        params={
+            "FID_PERIOD_DIV_CODE": "D",
+            "FID_COND_MRKT_DIV_CODE": market_code,
+            "FID_INPUT_ISCD": index_code,
+            "FID_INPUT_DATE_1": pd.Timestamp(as_of_date).strftime("%Y%m%d"),
+        },
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "text/plain",
+            "charset": "UTF-8",
+            "authorization": f"Bearer {token}",
+            "appkey": app_key,
+            "appsecret": app_secret,
+            "tr_id": KIS_INDEX_DAILY_TR_ID,
+            "custtype": "P",
+        },
+        timeout=timeout,
+        retries=retries,
+    )
+    payload = response.json()
+    if str(payload.get("rt_cd", "")) != "0":
+        raise RuntimeError(
+            f"KIS index API failed [{payload.get('msg_cd', '')}]: {payload.get('msg1', 'unknown error')}"
+        )
+    rows = payload.get("output2")
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        rows = []
+    return _parse_kis_index_rows(rows)
+
+
+def _merge_provisional_rows(
+    base: pd.DataFrame,
+    provisional: pd.DataFrame,
+    *,
+    max_date: pd.Timestamp,
+) -> tuple[pd.DataFrame, list[str]]:
+    if provisional.empty:
+        return base, []
+    base_max = pd.to_datetime(base["Date"]).max() if not base.empty else pd.Timestamp.min
+    fresh = provisional[(provisional["Date"] > base_max) & (provisional["Date"] <= max_date)].copy()
+    if fresh.empty:
+        return base, []
+    merged = _merge_cached(base, fresh, "target-with-kis-provisional")
+    dates = fresh["Date"].dt.strftime("%Y-%m-%d").tolist()
+    return merged, dates
 
 
 def _normalise_ohlcv(df: pd.DataFrame, source: str, *, strict_ohlc: bool = True) -> pd.DataFrame:
@@ -391,7 +529,12 @@ def fetch_fred_series(
     return combined
 
 
-def collect_data(config: dict[str, Any], project_root: Path) -> DataBundle:
+def collect_data(
+    config: dict[str, Any],
+    project_root: Path,
+    *,
+    allow_provisional: bool = True,
+) -> DataBundle:
     started = time.perf_counter()
     start = str(config["start_date"])
     seoul_today = datetime.now(ZoneInfo("Asia/Seoul")).date()
@@ -429,6 +572,43 @@ def collect_data(config: dict[str, Any], project_root: Path) -> DataBundle:
         target_provider = "yahoo_unofficial_fallback"
         target.to_csv(cache_dir / "kospi_yahoo.csv", index=False)
 
+    base_target_provider = target_provider
+    provisional_dates: list[str] = []
+    if allow_provisional and bool(config.get("kis_provisional_fallback", True)):
+        app_key, app_secret = _kis_credentials()
+        if bool(app_key) != bool(app_secret):
+            errors.append("KIS provisional fallback: only one of KIS_APP_KEY/KIS_APP_SECRET is set")
+        elif app_key and app_secret:
+            try:
+                seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
+                cutoff_text = str(config.get("kis_current_day_cutoff_time", "15:45"))
+                cutoff_hour, cutoff_minute = [int(x) for x in cutoff_text.split(":", 1)]
+                current_day_allowed = (seoul_now.hour, seoul_now.minute) >= (cutoff_hour, cutoff_minute)
+                max_provisional_date = pd.Timestamp(seoul_today)
+                if not current_day_allowed:
+                    max_provisional_date -= pd.Timedelta(days=1)
+                _log(
+                    f"KIS provisional check through {max_provisional_date.date()} "
+                    f"(current-day cutoff={cutoff_text})"
+                )
+                kis_recent = fetch_kis_kospi_recent(
+                    as_of_date=seoul_today.isoformat(),
+                    timeout=timeout,
+                    retries=retries,
+                    market_code=str(config.get("kis_market_code", "U")),
+                    index_code=str(config.get("kis_index_code", "0001")),
+                )
+                target, provisional_dates = _merge_provisional_rows(
+                    target, kis_recent, max_date=max_provisional_date
+                )
+                if provisional_dates:
+                    target_provider = f"{base_target_provider}_plus_kis_provisional"
+                    _log(f"KIS provisional rows added: {', '.join(provisional_dates)}")
+                else:
+                    _log("KIS provisional overlay: no newer eligible row")
+            except Exception as exc:
+                errors.append(f"KIS provisional fallback: {exc}")
+
     external_tickers = {str(k): str(v) for k, v in dict(config.get("external_tickers", {})).items()}
     factors, yahoo_warnings = fetch_yahoo_factors_batch(
         external_tickers,
@@ -459,7 +639,10 @@ def collect_data(config: dict[str, Any], project_root: Path) -> DataBundle:
         "collected_at_utc": datetime.now(timezone.utc).isoformat(),
         "collection_seconds": round(time.perf_counter() - started, 3),
         "target_provider": target_provider,
-        "target_official": target_provider.startswith("krx_official"),
+        "target_base_provider": base_target_provider,
+        "target_official": base_target_provider.startswith("krx_official") and not provisional_dates,
+        "target_latest_source": "kis_provisional" if provisional_dates else base_target_provider,
+        "target_provisional_dates": provisional_dates,
         "target_rows": int(len(target)),
         "target_date_min": target["Date"].min().strftime("%Y-%m-%d"),
         "target_date_max": target["Date"].max().strftime("%Y-%m-%d"),
