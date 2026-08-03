@@ -15,6 +15,8 @@ on:
       timezone: "Asia/Seoul"
     - cron: "20 15 * * 1-5"
       timezone: "Asia/Seoul"
+    - cron: "35 15 * * 1-5"
+      timezone: "Asia/Seoul"
     - cron: "5 20 * * 1-5"
       timezone: "Asia/Seoul"
 
@@ -24,11 +26,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: kospi-shadow-coach
+  group: kospi-shadow-coach-production
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -36,6 +38,8 @@ jobs:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +47,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Restore market data
         uses: actions/cache@v4
         with:
@@ -64,22 +71,34 @@ jobs:
           key: coach-history-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             coach-history-${{ runner.os }}-
-      - name: Verify secrets
+      - name: Verify data and deployment secrets
         shell: bash
         run: |
           test -n "$KRX_AUTH_KEY" || { echo "KRX_AUTH_KEY is missing"; exit 2; }
           test -n "$FRED_API_KEY" || { echo "FRED_API_KEY is missing"; exit 2; }
           test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
           test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+          test -n "$NETLIFY_AUTH_TOKEN" || { echo "NETLIFY_AUTH_TOKEN is missing"; exit 2; }
+          test -n "$NETLIFY_SITE_ID" || { echo "NETLIFY_SITE_ID is missing"; exit 2; }
       - run: pip install .
       - name: Refresh prediction and build session-aware PWA
         run: kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+      - name: Validate deploy directory
+        shell: bash
+        run: |
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/sw.js
+          test -f site/data/dashboard.json
+          test -f site/_headers
+          node --check site/app.js
+          node --check site/sw.js
       - name: Publish summary
         shell: bash
         run: |
           cat outputs/daily_brief.md >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Coach PWA artifact generated." >> "$GITHUB_STEP_SUMMARY"
+          echo "Coach PWA generated and queued for Netlify production deployment." >> "$GITHUB_STEP_SUMMARY"
       - name: Upload installable app artifact
         uses: actions/upload-artifact@v4
         with:
@@ -87,15 +106,38 @@ jobs:
           path: site/
           if-no-files-found: error
           retention-days: 30
+      - name: Deploy latest dashboard to Netlify production
+        shell: bash
+        run: |
+          npx --yes netlify-cli@latest deploy \
+            --prod \
+            --no-build \
+            --dir=site \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --message="KOSPI Coach run $GITHUB_RUN_NUMBER ($GITHUB_SHA)" \
+            --timeout=10m \
+            --json | tee outputs/netlify-deploy.json
+      - name: Record Netlify deployment
+        if: always()
+        shell: bash
+        run: |
+          if [ -s outputs/netlify-deploy.json ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "## Netlify deployment" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat outputs/netlify-deploy.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload Pages artifact
         if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: site/
 
-  deploy:
+  deploy-pages:
     if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
-    needs: build
+    needs: build-and-deploy
     runs-on: ubuntu-latest
     environment:
       name: github-pages

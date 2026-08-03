@@ -1,4 +1,4 @@
-# KOSPI Shadow Coach v4
+# KOSPI Shadow Coach v4.1
 
 기존 누수 통제형 KOSPI 예측 파이프라인에 **시간대별 시장 코칭 PWA**를 결합한 개인 연구용 앱입니다.
 

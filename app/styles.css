@@ -101,3 +101,10 @@ a { color: inherit; }
 .briefing-mark { width:8px; height:8px; border-radius:50%; background:#6f7b91; }
 .briefing-mark.positive { background:var(--positive); } .briefing-mark.negative { background:var(--negative); }
 @media(max-width:560px){ .briefing-grid{grid-template-columns:1fr} }
+.freshness-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; font-size:12px; }
+.badge.stale { color:var(--warning); background:rgba(245,195,91,.13); }
+.badge.fresh { color:var(--positive); background:rgba(66,211,146,.13); }
+.icon-button.loading { animation:spin .8s linear infinite; opacity:.7; }
+.icon-button:disabled { cursor:wait; }
+.toast.ok { background:#112b25; border-color:rgba(66,211,146,.25); color:#d6fff0; }
+@keyframes spin { to { transform:rotate(360deg); } }

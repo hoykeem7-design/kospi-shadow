@@ -18,7 +18,7 @@
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
-      <button id="refreshButton" class="icon-button" aria-label="새로고침">↻</button>
+      <button id="refreshButton" class="icon-button" aria-label="최신 배포본 확인" title="최신 배포본 확인">↻</button>
     </div>
   </header>
 
@@ -30,6 +30,7 @@
       </div>
       <h2 id="sessionTitle">시장 상태 확인 중</h2>
       <p id="sessionDescription" class="muted"></p>
+      <div class="freshness-row"><span id="freshnessBadge" class="badge">데이터 확인 중</span><span id="nextAutoUpdate" class="muted"></span></div>
       <div class="hero-grid">
         <div class="probability-wrap">
           <div id="gauge" class="gauge" style="--p:50">

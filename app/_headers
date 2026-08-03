@@ -1,0 +1,12 @@
+/data/*
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/
+  Cache-Control: no-cache, max-age=0, must-revalidate

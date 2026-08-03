@@ -1,5 +1,63 @@
-const CACHE="kospi-shadow-coach-v4";
-const ASSETS=["./","index.html","styles.css","app.js","manifest.webmanifest","data/initial-data.js","data/dashboard.json","icons/icon-192.png","icons/icon-512.png"];
-self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
-self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener("fetch",e=>{if(e.request.method!=="GET")return;e.respondWith(fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>caches.match(e.request)));});
+const STATIC_CACHE = "kospi-shadow-coach-v4.1-static";
+const STATIC_ASSETS = [
+  "./",
+  "index.html",
+  "styles.css",
+  "app.js",
+  "manifest.webmanifest",
+  "icons/icon-192.png",
+  "icons/icon-512.png"
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(STATIC_CACHE)
+      .then((cache) => cache.addAll(STATIC_ASSETS))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
+});
+
+async function networkFirst(request) {
+  try {
+    return await fetch(request, { cache: "no-store" });
+  } catch (error) {
+    const cached = await caches.match(request, { ignoreSearch: true });
+    if (cached) return cached;
+    throw error;
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(request, { ignoreSearch: true });
+  const networkPromise = fetch(request).then((response) => {
+    if (response.ok) cache.put(request, response.clone());
+    return response;
+  }).catch(() => null);
+  if (cached) {
+    networkPromise.catch(() => null);
+    return cached;
+  }
+  return (await networkPromise) || Response.error();
+}
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const isLiveData = url.pathname.endsWith("/data/dashboard.json") || url.pathname.endsWith("/data/history.json");
+  const isNavigation = event.request.mode === "navigate";
+
+  if (isLiveData || isNavigation) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+  event.respondWith(staleWhileRevalidate(event.request));
+});

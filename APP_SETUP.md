@@ -34,3 +34,14 @@ GitHub Free의 비공개 저장소는 Pages 배포가 지원되지 않을 수 �
 - 분 단위 최적 진입 시각은 별도 실시간 확인 레이어이며 아직 독립적으로 백테스트된 확률모델이 아닙니다.
 - 정적 PWA는 NXT WebSocket을 상시 구독하지 않습니다. 08:00~08:45에는 안전하게 선물 개장 확인을 기다립니다.
 - 자동주문 기능은 포함하지 않습니다.
+
+## Automatic Netlify production updates (v4.1)
+
+The Coach workflow now refreshes the prediction, rebuilds `site/`, and deploys it to the existing Netlify production site at the configured checkpoints.
+
+Required GitHub Actions repository secrets:
+
+- `NETLIFY_AUTH_TOKEN`: Netlify personal access token.
+- `NETLIFY_SITE_ID`: Netlify project ID or project name. For the current site, `joyful-crostata-e96663` is accepted by Netlify CLI.
+
+The app refresh button checks the latest deployed `data/dashboard.json`. It does not expose API credentials and does not trigger a GitHub workflow from the browser. Scheduled GitHub Actions runs are responsible for collecting data and publishing the new production deploy.
