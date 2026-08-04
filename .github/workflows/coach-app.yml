@@ -17,6 +17,10 @@ on:
       timezone: "Asia/Seoul"
     - cron: "35 15 * * 1-5"
       timezone: "Asia/Seoul"
+    - cron: "45 15 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "0 18 * * 1-5"
+      timezone: "Asia/Seoul"
     - cron: "5 20 * * 1-5"
       timezone: "Asia/Seoul"
 
@@ -40,6 +44,7 @@ jobs:
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
       PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
       PREMARKET_HISTORY_DIR: premarket-history-store/history
       PYTHONUNBUFFERED: "1"

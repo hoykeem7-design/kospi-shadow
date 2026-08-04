@@ -352,6 +352,89 @@ def _opening_baseline(history: list[dict[str, Any]], field: str) -> list[float]:
     return values
 
 
+def _same_time_aftermarket_baseline(
+    history: list[dict[str, Any]], *, now: datetime, field: str, tolerance_minutes: int
+) -> list[float]:
+    current_minute = now.hour * 60 + now.minute
+    candidates: dict[str, tuple[int, float]] = {}
+    for item in history:
+        summary = item.get("aftermarket_summary") or {}
+        text = item.get("collected_at")
+        if not text or summary.get("availability") != "available":
+            continue
+        try:
+            observed = datetime.fromisoformat(str(text)).astimezone(SEOUL)
+        except (TypeError, ValueError):
+            continue
+        minute = observed.hour * 60 + observed.minute
+        if observed.date() == now.date() or minute > current_minute or current_minute - minute > tolerance_minutes:
+            continue
+        value = _number(summary.get(field))
+        date_text = observed.date().isoformat()
+        if value is not None and (date_text not in candidates or minute > candidates[date_text][0]):
+            candidates[date_text] = (minute, value)
+    return [candidates[key][1] for key in sorted(candidates, reverse=True)]
+
+
+def _build_aftermarket_summary(
+    snapshot: dict[str, Any] | None,
+    history: list[dict[str, Any]],
+    *,
+    now: datetime,
+    krx_close: Any,
+    baseline_period: int,
+    minimum_baseline_samples: int,
+    same_time_tolerance_minutes: int,
+) -> dict[str, Any]:
+    if not snapshot or snapshot.get("availability") != "available":
+        return {
+            "availability": "unavailable",
+            "unavailable_reason": "nxt_aftermarket_snapshot_not_received",
+            "observed_at": None,
+            "received_at": None,
+            "data_delay_seconds": None,
+            "stale": None,
+            "data_quality": "unavailable",
+            "source": "KIS NXT REST",
+        }
+    current = _number(snapshot.get("current_price"))
+    close = _number(krx_close)
+    volume_baseline = _same_time_aftermarket_baseline(
+        history, now=now, field="cumulative_volume", tolerance_minutes=same_time_tolerance_minutes
+    )[:baseline_period]
+    turnover_baseline = _same_time_aftermarket_baseline(
+        history, now=now, field="cumulative_turnover", tolerance_minutes=same_time_tolerance_minutes
+    )[:baseline_period]
+    observed = datetime.fromisoformat(snapshot["observed_at"]) if snapshot.get("observed_at") else None
+    return {
+        "availability": "available",
+        "unavailable_reason": None,
+        "krx_close": close,
+        "current_price": current,
+        "krx_close_return": current / close - 1.0 if current is not None and close not in (None, 0) else None,
+        "high": snapshot.get("high"),
+        "low": snapshot.get("low"),
+        "cumulative_volume": snapshot.get("cumulative_volume"),
+        "cumulative_turnover": snapshot.get("cumulative_turnover"),
+        "relative_volume": relative_metric(
+            snapshot.get("cumulative_volume"), volume_baseline,
+            minimum_sample_count=minimum_baseline_samples, observed_at=observed,
+        ),
+        "relative_turnover": relative_metric(
+            snapshot.get("cumulative_turnover"), turnover_baseline,
+            minimum_sample_count=minimum_baseline_samples, observed_at=observed,
+        ),
+        "bid_ask_spread": snapshot.get("bid_ask_spread"),
+        "liquidity_status": "observed_without_validated_threshold",
+        "observed_at": snapshot.get("observed_at"),
+        "received_at": snapshot.get("received_at"),
+        "data_delay_seconds": snapshot.get("data_delay_seconds"),
+        "stale": snapshot.get("stale"),
+        "data_quality": snapshot.get("data_quality"),
+        "source": snapshot.get("source"),
+    }
+
+
 def _last_premarket_summary(
     history: list[dict[str, Any]], *, trading_date: str
 ) -> dict[str, Any] | None:
@@ -587,6 +670,7 @@ def build_premarket_experiment(
         bars: list[dict[str, Any]] = []
         label_bars: list[dict[str, Any]] = []
         auction_snapshot: dict[str, Any] | None = None
+        aftermarket_snapshot: dict[str, Any] | None = None
         t = now.timetz().replace(tzinfo=None)
         try:
             if t < dtime(9, 0):
@@ -629,6 +713,18 @@ def build_premarket_experiment(
                 )
             except Exception:
                 warnings.append("krx_opening_auction_not_received")
+
+        if dtime(15, 40) <= t:
+            try:
+                received = datetime.now(SEOUL)
+                price = provider.current_price(symbol, "NX")
+                book, expected = provider.orderbook(symbol, "NX")
+                aftermarket_snapshot = normalize_snapshot(
+                    symbol=symbol, market="NX", price_row=price, book_row=book,
+                    expected_row=expected, received_at=received, stale_after_seconds=stale_after,
+                )
+            except Exception:
+                warnings.append("nxt_aftermarket_snapshot_not_received")
 
         premarket_summary = (
             _build_premarket_summary(
@@ -704,6 +800,34 @@ def build_premarket_experiment(
             if t >= dtime(15, 30)
             else None
         )
+        closing_summary = {
+            "availability": "available" if close_price is not None else "unavailable",
+            "unavailable_reason": None if close_price is not None else "official_close_not_received",
+            "actual_open": (krx_snapshot or {}).get("open") or opening_summary.get("actual_open"),
+            "price_0930": price_0930,
+            "close_price": close_price,
+            "high": (krx_snapshot or {}).get("high"),
+            "low": (krx_snapshot or {}).get("low"),
+            "volume": (krx_snapshot or {}).get("cumulative_volume"),
+            "turnover": (krx_snapshot or {}).get("cumulative_turnover"),
+            "observed_at": (krx_snapshot or {}).get("observed_at"),
+            "received_at": (krx_snapshot or {}).get("received_at"),
+            "data_quality": (krx_snapshot or {}).get("data_quality", "unavailable"),
+            "source": (krx_snapshot or {}).get("source", "KIS KRX REST"),
+        }
+        aftermarket_summary = _build_aftermarket_summary(
+            aftermarket_snapshot,
+            history,
+            now=now,
+            krx_close=close_price,
+            baseline_period=baseline_period,
+            minimum_baseline_samples=minimum_baseline_samples,
+            same_time_tolerance_minutes=tolerance,
+        ) if t >= dtime(15, 40) else {
+            "availability": "unavailable",
+            "unavailable_reason": "nxt_aftermarket_not_started",
+            "data_quality": "unavailable",
+        }
         labels = compute_labels(
             previous_close=(krx_snapshot or {}).get("previous_close") or premarket_summary.get("previous_close"),
             open_price=(krx_snapshot or {}).get("open") or opening_summary.get("actual_open"),
@@ -750,6 +874,8 @@ def build_premarket_experiment(
             "premarket_summary": premarket_summary if t < dtime(9, 0) else None,
             "auction_snapshot": auction_snapshot,
             "opening_five_minute_summary": opening_summary if opening_summary.get("data_complete") else None,
+            "closing_summary": closing_summary if closing_summary.get("availability") == "available" else None,
+            "aftermarket_summary": aftermarket_summary if aftermarket_summary.get("availability") == "available" else None,
             "labels": labels,
         }
         if persist_history:
@@ -783,6 +909,8 @@ def build_premarket_experiment(
             "premarket_summary": premarket_summary,
             "opening_auction_summary": auction_summary,
             "opening_five_minute_summary": opening_summary,
+            "closing_summary": closing_summary,
+            "aftermarket_summary": aftermarket_summary,
             "market_indicators": market_indicators,
             "premarket_prediction": pre_prediction,
             "post_open_0905_prediction": post_prediction,

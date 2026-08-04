@@ -21,7 +21,20 @@ def test_coach_workflow_has_netlify_production_deploy():
 def test_coach_workflow_covers_post_close_refresh():
     text = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
     assert 'cron: "35 15 * * 1-5"' in text
+    assert 'cron: "45 15 * * 1-5"' in text
+    assert 'cron: "0 18 * * 1-5"' in text
+    assert 'cron: "5 20 * * 1-5"' in text
     assert 'timezone: "Asia/Seoul"' in text
+
+
+def test_aftermarket_collector_and_coach_use_shared_serialization():
+    collector = (ROOT / ".github" / "workflows" / "premarket-collector.yml").read_text(encoding="utf-8")
+    coach = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
+    assert 'cron: "42 15 * * 1-5"' in collector
+    assert 'cron: "0 17,19,20 * * 1-5"' in collector
+    assert "group: kospi-shadow-live-data" in collector
+    assert "group: kospi-shadow-live-data" in coach
+    assert "DART_API_KEY: ${{ secrets.DART_API_KEY }}" in coach
 
 
 def test_service_worker_never_caches_live_dashboard():
