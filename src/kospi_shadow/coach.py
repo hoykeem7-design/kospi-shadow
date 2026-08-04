@@ -22,6 +22,7 @@ from .data import (
     _retry_get,
     fetch_kis_access_token,
 )
+from .premarket_data import build_premarket_experiment
 
 SEOUL = ZoneInfo("Asia/Seoul")
 KIS_INDEX_PRICE_ENDPOINT = "/uapi/domestic-stock/v1/quotations/inquire-index-price"
@@ -589,6 +590,31 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         events = []
         warnings.append(f"FRED release calendar: {exc}")
 
+    try:
+        premarket_experiment = build_premarket_experiment(
+            settings,
+            project_root,
+            now_seoul=now_seoul,
+            market_snapshot=index,
+        )
+    except Exception:
+        # The existing KOSPI dashboard must remain available even if the
+        # isolated stock-level experiment cannot collect data.
+        premarket_experiment = {
+            "schema_version": 1,
+            "feature_name": "two_stage_nxt_premarket_prediction",
+            "market_phase": "unavailable",
+            "phase_display": "데이터 미수신",
+            "configured": False,
+            "symbols": [],
+            "data_availability": {
+                "availability": "unavailable",
+                "unavailable_reason": "premarket_experiment_generation_failed",
+            },
+            "experimental": True,
+        }
+        warnings.append("Two-stage premarket experiment: unavailable")
+
     session = resolve_session_context(now_seoul)
     coaching = build_coaching(
         prediction=prediction,
@@ -598,8 +624,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         futures=futures,
     )
     dashboard = {
-        "schema_version": 2,
-        "app_version": "4.2.0",
+        "schema_version": 3,
+        "app_version": "4.3.0",
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {
             "code": session.code,
@@ -631,6 +657,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
             "kospi200_futures": futures,
             "factors": factors,
         },
+        "market_phase": premarket_experiment.get("market_phase"),
+        "premarket_experiment": premarket_experiment,
         "coaching": coaching,
         "briefing": build_briefing(
             prediction=prediction, index=index, futures=futures, factors=factors, news=news, events=events

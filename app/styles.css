@@ -132,3 +132,19 @@ a { color: inherit; }
 .driver-meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:5px 10px; margin-top:6px; color:var(--muted); font-size:10px; }
 .explanation-note { margin:12px 2px 0; color:var(--muted); font-size:11px; line-height:1.5; }
 @media(max-width:720px){ .probability-breakdown{grid-template-columns:repeat(2,minmax(0,1fr))}.driver-columns{grid-template-columns:1fr} }
+
+.experiment-head { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
+.warning-badge { color:var(--warning); background:rgba(245,195,91,.13); }
+.experiment-warning { margin:13px 0 0; padding:12px 14px; border-radius:14px; border:1px solid rgba(245,195,91,.18); background:rgba(245,195,91,.06); color:#d8cda8; font-size:12px; line-height:1.55; }
+.empty-state { margin-top:14px; padding:16px; border:1px dashed var(--line); border-radius:15px; color:var(--muted); }
+.symbol-picker { display:flex; align-items:center; gap:10px; margin-top:15px; color:var(--muted); font-size:13px; }
+.symbol-picker select { min-width:210px; padding:9px 12px; border:1px solid var(--line); border-radius:11px; color:var(--text); background:var(--panel-solid); font:inherit; }
+.stage-comparison { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+.stage-card,.experiment-panel { padding:15px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.025); }
+.stage-label { display:block; color:var(--accent); font-size:11px; font-weight:800; letter-spacing:.3px; }
+.stage-card > strong { display:block; margin-top:7px; font-size:15px; }
+.experiment-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; }
+.experiment-panel h3 { margin:0; font-size:14px; }
+.metric-list.compact { gap:8px 10px; font-size:12px; }
+.metric-list.compact dd { max-width:210px; overflow-wrap:anywhere; }
+@media(max-width:840px){ .experiment-grid{grid-template-columns:1fr}.stage-comparison{grid-template-columns:1fr} }

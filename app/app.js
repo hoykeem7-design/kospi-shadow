@@ -5,7 +5,7 @@ const clsFor = (value) => value == null || Math.abs(value) < 1e-12 ? "neutral" :
 const safeText = (value, fallback="--") => value == null || value === "" ? fallback : String(value);
 const escapeHtml = (value) => safeText(value, "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
 const safeUrl = (value) => { try { const url = new URL(String(value)); return ["http:","https:"].includes(url.protocol) ? url.href : "#"; } catch { return "#"; } };
-const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","09:10","12:00","15:20","15:35","20:05"];
+const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","08:50","08:55","09:00","09:05","09:10","12:00","15:20","15:35","20:05"];
 
 let deferredPrompt;
 let currentDashboard = null;
@@ -120,6 +120,138 @@ function renderProbabilityExplanation(data) {
   $("explanationNote").textContent = safeText(explanation.note, "");
 }
 
+const MISSING_LABELS = {
+  no_symbols_configured: "설정된 실험 종목 없음",
+  nxt_snapshot_not_received: "NXT 데이터 미수신",
+  premarket_snapshot_not_collected: "프리장 데이터 미수신",
+  opening_auction_data_not_received: "동시호가 데이터 미수신",
+  opening_confirmation_in_progress: "시초 확인 중",
+  first_five_minutes_incomplete: "첫 5분 데이터 수집 중",
+  not_started: "아직 수집 전",
+  insufficient_same_time_history: "기준 데이터 부족",
+  baseline_median_not_positive: "기준 데이터 부족",
+  current_value_missing: "데이터 없음",
+  stock_level_training_and_calibration_unavailable: "확률 산출 불가",
+  kis_provider_unavailable: "데이터 제공 불가",
+  required_market_data_not_received: "데이터 미수신"
+};
+
+function missingLabel(reason, fallback="데이터 없음") {
+  return MISSING_LABELS[reason] || fallback;
+}
+
+function metricValue(value, formatter=fmtNum, reason=null) {
+  return value == null ? missingLabel(reason) : formatter(value);
+}
+
+function relativeValue(metric) {
+  if (!metric?.baseline_available) return missingLabel(metric?.unavailable_reason, "기준 데이터 부족");
+  return `${fmtNum(metric.relative_value, 2)}배 · ${fmtNum(metric.baseline_sample_count, 0)}일`;
+}
+
+function renderPredictionStage(prediction, statusId, listId, pendingText) {
+  if (!prediction) {
+    $(statusId).textContent = pendingText;
+    $(listId).innerHTML = `<dt>09:30 상승 확률</dt><dd>산출 전</dd><dt>종가 상승 확률</dt><dd>산출 전</dd><dt>갭 지속 확률</dt><dd>산출 전</dd>`;
+    return;
+  }
+  $(statusId).textContent = prediction.probability_available ? "확률 산출 완료" : missingLabel(prediction.calibration_reason, "확률 산출 불가");
+  $(listId).innerHTML = [
+    ["09:30 상승 확률", metricValue(prediction.open_to_0930_up_probability, value => fmtPct(value, 1), prediction.calibration_reason)],
+    ["종가 상승 확률", metricValue(prediction.open_to_close_up_probability, value => fmtPct(value, 1), prediction.calibration_reason)],
+    ["갭 지속 확률", metricValue(prediction.gap_continuation_probability, value => fmtPct(value, 1), prediction.calibration_reason)],
+    ["신뢰도", prediction.confidence === "low" ? "낮은 신뢰도" : safeText(prediction.confidence)],
+    ["표본 수", fmtNum(prediction.sample_count, 0)],
+    ["확률 보정", prediction.calibration_status === "unavailable" ? "사용 불가" : safeText(prediction.calibration_status)],
+    ["데이터 기준", safeText(prediction.observed_at, "수신 시각 불명")]
+  ].map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+}
+
+function renderExperimentFactor(item, tone) {
+  const actual = metricValue(item?.actual_value, value => fmtNum(value, 4));
+  const reference = metricValue(item?.reference_value, value => fmtNum(value, 4));
+  const contribution = item?.contribution_value == null ? "설명용 참고 신호" : fmtNum(item.contribution_value, 4);
+  return `<div class="driver-item ${tone}"><div class="driver-head"><strong>${escapeHtml(item?.display_name)}</strong><span>${escapeHtml(contribution)}</span></div><div class="driver-meta"><span>실제 ${escapeHtml(actual)} · 기준 ${escapeHtml(reference)}</span><span>${escapeHtml(safeText(item?.data_quality,"품질 불명"))}</span></div></div>`;
+}
+
+function summaryRows(rows) {
+  return rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+}
+
+function renderPremarketSymbol(item) {
+  const pre = item?.premarket_summary || {};
+  const auction = item?.opening_auction_summary || {};
+  const opening = item?.opening_five_minute_summary || {};
+  renderPredictionStage(item?.premarket_prediction, "premarketPredictionStatus", "premarketProbabilities", "확률 산출 불가");
+  renderPredictionStage(item?.post_open_0905_prediction, "postOpenPredictionStatus", "postOpenProbabilities", item?.market_phase === "opening_confirmation" ? "시초 확인 중" : "업데이트 확률 산출 전");
+
+  $("premarketMetrics").innerHTML = summaryRows([
+    ["NXT 수익률", metricValue(pre.nxt_return, value => fmtPct(value, 2), pre.unavailable_reason)],
+    ["고가·저가", pre.nxt_high == null || pre.nxt_low == null ? missingLabel(pre.unavailable_reason) : `${fmtNum(pre.nxt_high)} · ${fmtNum(pre.nxt_low)}`],
+    ["최종가", metricValue(pre.nxt_final_price, fmtNum, pre.unavailable_reason)],
+    ["누적 거래량", metricValue(pre.cumulative_volume, value => fmtNum(value, 0), pre.unavailable_reason)],
+    ["누적 거래대금", metricValue(pre.cumulative_turnover, value => fmtNum(value, 0), pre.unavailable_reason)],
+    ["상대거래량", relativeValue(pre.relative_volume)],
+    ["상대거래대금", relativeValue(pre.relative_turnover)],
+    ["거래대금÷시가총액", metricValue(pre.turnover_to_market_cap, value => fmtPct(value, 3))],
+    ["호가 스프레드", metricValue(pre.bid_ask_spread, value => fmtPct(value, 3))],
+    ["호가 불균형", metricValue(pre.orderbook_imbalance, value => fmtPct(value, 1))],
+    ["체결 불균형", metricValue(pre.execution_imbalance, value => fmtPct(value, 1))],
+    ["재료", pre.material?.availability === "available" ? safeText(pre.material.material_type) : "데이터 제공 불가"],
+    ["기준 시각", safeText(pre.observed_at, "수신 시각 불명")],
+    ["데이터 지연", pre.data_delay_seconds == null ? "수신 시각 불명" : `${fmtNum(pre.data_delay_seconds, 0)}초`],
+    ["데이터 품질", safeText(pre.data_quality, "데이터 품질 낮음")]
+  ]);
+  $("auctionMetrics").innerHTML = summaryRows([
+    ["예상체결가", metricValue(auction.expected_price, fmtNum, auction.unavailable_reason)],
+    ["예상체결수량", metricValue(auction.expected_volume, value => fmtNum(value, 0), auction.unavailable_reason)],
+    ["예상체결대금", metricValue(auction.expected_turnover, value => fmtNum(value, 0), auction.unavailable_reason)],
+    ["가격 안정도", auction.expected_price_stability?.available ? fmtPct(auction.expected_price_stability.value, 1) : missingLabel(auction.expected_price_stability?.unavailable_reason, "데이터 부족")],
+    ["수량 변화", metricValue(auction.expected_volume_change, value => fmtPct(value, 1))],
+    ["업데이트 수", fmtNum(auction.update_count, 0)],
+    ["관측 구간", auction.observation_start && auction.observation_end ? `${auction.observation_start} ~ ${auction.observation_end}` : "데이터 미수신"]
+  ]);
+  $("openingMetrics").innerHTML = summaryRows([
+    ["실제 시가", metricValue(opening.actual_open, fmtNum, opening.unavailable_reason)],
+    ["첫 1분 수익률", metricValue(opening.first_1m_return, value => fmtPct(value, 2), opening.unavailable_reason)],
+    ["첫 3분 수익률", metricValue(opening.first_3m_return, value => fmtPct(value, 2), opening.unavailable_reason)],
+    ["첫 5분 수익률", metricValue(opening.first_5m_return, value => fmtPct(value, 2), opening.unavailable_reason)],
+    ["첫 5분 거래량", metricValue(opening.volume, value => fmtNum(value, 0), opening.unavailable_reason)],
+    ["상대거래량", relativeValue(opening.relative_volume)],
+    ["VWAP", metricValue(opening.vwap, fmtNum, opening.unavailable_reason)],
+    ["VWAP 대비", metricValue(opening.current_vs_vwap, value => fmtPct(value, 2), opening.unavailable_reason)],
+    ["시가 유지", opening.open_held == null ? "데이터 부족" : (opening.open_held ? "유지" : "이탈")],
+    ["이탈 후 회복", opening.open_recovery == null ? "데이터 부족" : (opening.open_recovery ? "회복" : "미회복")]
+  ]);
+  const positives = item?.positive_factors || [];
+  const negatives = item?.negative_factors || [];
+  $("premarketPositiveFactors").innerHTML = positives.length ? positives.map(factor => renderExperimentFactor(factor, "positive")).join("") : `<p class="empty">확인된 상승 참고 요인이 없습니다.</p>`;
+  $("premarketNegativeFactors").innerHTML = negatives.length ? negatives.map(factor => renderExperimentFactor(factor, "negative")).join("") : `<p class="empty">확인된 하락·위험 참고 요인이 없습니다.</p>`;
+  const warnings = item?.data_availability?.warnings || [];
+  $("premarketDataNote").textContent = warnings.length ? `데이터 경고: ${warnings.map(reason => missingLabel(reason, reason)).join(", ")}` : "모델 기여도를 계산할 학습 모델이 없어 현재 요인은 설명용 참고 신호로만 표시합니다.";
+}
+
+function renderPremarketExperiment(data) {
+  const experiment = data?.premarket_experiment;
+  $("premarketPhase").textContent = safeText(experiment?.phase_display, "데이터 확인 중");
+  const symbols = experiment?.symbols || [];
+  if (!experiment || !symbols.length) {
+    $("premarketEmpty").textContent = missingLabel(experiment?.data_availability?.unavailable_reason, "이 배포본에는 개별 종목 실험 데이터가 없습니다.");
+    $("premarketEmpty").classList.remove("hidden");
+    $("premarketContent").classList.add("hidden");
+    return;
+  }
+  $("premarketEmpty").classList.add("hidden");
+  $("premarketContent").classList.remove("hidden");
+  const select = $("premarketSymbolSelect");
+  const previous = select.value;
+  select.innerHTML = symbols.map(item => `<option value="${escapeHtml(item.symbol)}">${escapeHtml(item.name)} (${escapeHtml(item.symbol)})</option>`).join("");
+  select.value = symbols.some(item => item.symbol === previous) ? previous : symbols[0].symbol;
+  const renderSelected = () => renderPremarketSymbol(symbols.find(item => item.symbol === select.value) || symbols[0]);
+  select.onchange = renderSelected;
+  renderSelected();
+}
+
 function renderFreshness(data) {
   const generated = new Date(data.generated_at_seoul);
   const ageMinutes = Math.max(0, Math.floor((Date.now() - generated.getTime()) / 60000));
@@ -150,6 +282,7 @@ function render(data) {
   $("confidenceLabel").textContent = data.coaching.confidence_label;
   $("nextCheckpoint").textContent = `${data.coaching.next_checkpoint_at} ${data.coaching.next_checkpoint_label}`;
   renderProbabilityExplanation(data);
+  renderPremarketExperiment(data);
   $("dataSource").textContent = `${safeText(data.data_quality.latest_source)} · ${safeText(data.data_quality.target_date_max)}`;
   $("briefingList").innerHTML = (data.briefing || []).length ? (data.briefing || []).map(item => `<div class="briefing-item"><strong><span class="briefing-mark ${item.tone}"></span>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.text)}</p></div>`).join("") : `<p class="empty">핵심 요약을 생성하지 못했습니다.</p>`;
 

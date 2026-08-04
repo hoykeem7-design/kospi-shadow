@@ -1,0 +1,60 @@
+name: NXT Premarket Snapshot Collector
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "10,20,30,40 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "50,55 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "0,5 9 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "30 9 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "35 15 * * 1-5"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nxt-premarket-snapshot-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Restore accumulated point-in-time history
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: market-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            market-data-${{ runner.os }}-
+      - name: Verify provider credentials
+        shell: bash
+        run: |
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+      - run: pip install .
+      - name: Collect configured stock snapshots
+        run: kospi-shadow-premarket --config config/default.yml --project-root .
+      - name: Upload non-secret collection status
+        uses: actions/upload-artifact@v4
+        with:
+          name: nxt-premarket-status-${{ github.run_number }}
+          path: outputs/premarket_collection_status.json
+          if-no-files-found: error
+          retention-days: 14

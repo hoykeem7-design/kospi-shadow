@@ -40,6 +40,7 @@ jobs:
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
@@ -96,9 +97,11 @@ jobs:
       - name: Publish summary
         shell: bash
         run: |
-          cat outputs/daily_brief.md >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Coach PWA generated and queued for Netlify production deployment." >> "$GITHUB_STEP_SUMMARY"
+          {
+            cat outputs/daily_brief.md
+            echo ""
+            echo "Coach PWA generated and queued for Netlify production deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload installable app artifact
         uses: actions/upload-artifact@v4
         with:
@@ -123,11 +126,13 @@ jobs:
         shell: bash
         run: |
           if [ -s outputs/netlify-deploy.json ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "## Netlify deployment" >> "$GITHUB_STEP_SUMMARY"
-            echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            cat outputs/netlify-deploy.json >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo ""
+              echo "## Netlify deployment"
+              echo '```json'
+              cat outputs/netlify-deploy.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload Pages artifact
         if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}

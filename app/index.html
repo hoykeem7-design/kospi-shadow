@@ -80,6 +80,40 @@
       <p id="explanationNote" class="explanation-note"></p>
     </section>
 
+    <section class="section-block card premarket-experiment">
+      <div class="section-title">
+        <h2>개별 종목 NXT 2단계 예측</h2>
+        <div class="experiment-head"><span id="premarketPhase" class="badge">데이터 확인 중</span><span class="badge warning-badge">실험 기능</span></div>
+      </div>
+      <p class="experiment-warning">프리장 가격과 거래량은 후보 선정 신호이며, 본장 방향을 보장하지 않습니다. 확률은 시초가 이후 데이터에 따라 변경될 수 있습니다.</p>
+      <div id="premarketEmpty" class="empty-state">설정된 종목이 없거나 데이터를 아직 수신하지 못했습니다.</div>
+      <div id="premarketContent" class="hidden">
+        <label class="symbol-picker">종목 <select id="premarketSymbolSelect" aria-label="NXT 실험 종목 선택"></select></label>
+        <div class="stage-comparison">
+          <section class="stage-card">
+            <span class="stage-label">장전 예측</span>
+            <strong id="premarketPredictionStatus">확률 산출 불가</strong>
+            <dl id="premarketProbabilities" class="metric-list compact"></dl>
+          </section>
+          <section class="stage-card">
+            <span class="stage-label">09:05 확인 후 업데이트</span>
+            <strong id="postOpenPredictionStatus">업데이트 확률 산출 전</strong>
+            <dl id="postOpenProbabilities" class="metric-list compact"></dl>
+          </section>
+        </div>
+        <div class="experiment-grid">
+          <section class="experiment-panel"><h3>프리장 요약</h3><dl id="premarketMetrics" class="metric-list compact"></dl></section>
+          <section class="experiment-panel"><h3>동시호가</h3><dl id="auctionMetrics" class="metric-list compact"></dl></section>
+          <section class="experiment-panel"><h3>첫 5분 확인</h3><dl id="openingMetrics" class="metric-list compact"></dl></section>
+        </div>
+        <div class="driver-columns">
+          <section class="driver-panel positive-panel"><h3>상승 가능성을 높인 참고 요인</h3><div id="premarketPositiveFactors" class="driver-list"></div></section>
+          <section class="driver-panel negative-panel"><h3>하락·위험 참고 요인</h3><div id="premarketNegativeFactors" class="driver-list"></div></section>
+        </div>
+        <p id="premarketDataNote" class="explanation-note"></p>
+      </div>
+    </section>
+
     <section class="section-block card">
       <div class="section-title"><h2>한눈에 보는 핵심</h2><span class="muted">모델·시장·뉴스 종합</span></div>
       <div id="briefingList" class="briefing-grid"></div>
