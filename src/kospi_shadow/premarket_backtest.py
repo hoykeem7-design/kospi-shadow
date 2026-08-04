@@ -13,6 +13,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from .premarket import validate_stage_feature_bundle
+
 
 @dataclass(frozen=True)
 class BacktestRecord:
@@ -23,6 +25,36 @@ class BacktestRecord:
     actual_label: bool | None
     realized_return: float | None = None
     feature_cutoff: str | None = None
+    feature_bundle: dict[str, Any] | None = None
+
+
+def build_backtest_dataset(
+    records: Iterable[BacktestRecord], *, stage: str
+) -> tuple[list[BacktestRecord], dict[str, int]]:
+    """Select a stage and enforce its point-in-time cutoff before scoring."""
+    selected: list[BacktestRecord] = []
+    verified = 0
+    unknown_time = 0
+    for record in records:
+        if record.stage != stage:
+            continue
+        if record.feature_bundle is None:
+            unknown_time += 1
+        else:
+            checked = validate_stage_feature_bundle(
+                record.feature_bundle,
+                trading_date=record.trading_date,
+                stage=stage,
+            )
+            if any(item.get("cutoff_validation") == "timestamp_unavailable" for item in checked):
+                unknown_time += 1
+            else:
+                verified += 1
+        selected.append(record)
+    return selected, {
+        "cutoff_verified_record_count": verified,
+        "unknown_time_record_count": unknown_time,
+    }
 
 
 def _calibration(actual: np.ndarray, probability: np.ndarray, bins: int = 10) -> dict[str, Any]:
@@ -59,10 +91,10 @@ def evaluate_stage_backtest(
 ) -> dict[str, Any]:
     if stage not in {"premarket_prediction", "post_open_0905_prediction"}:
         raise ValueError("unknown two-stage backtest stage")
+    stage_records, cutoff_quality = build_backtest_dataset(records, stage=stage)
     selected = [
-        record for record in records
-        if record.stage == stage
-        and record.probability is not None
+        record for record in stage_records
+        if record.probability is not None
         and record.actual_label is not None
     ]
     if len(selected) < int(minimum_sample_count):
@@ -81,6 +113,7 @@ def evaluate_stage_backtest(
             "calibration": None,
             "cost_adjusted_expected_return": None,
             "max_drawdown": None,
+            "feature_time_quality": cutoff_quality,
         }
     actual = np.asarray([int(record.actual_label) for record in selected], dtype=int)
     probability = np.clip(np.asarray([float(record.probability) for record in selected]), 1e-6, 1 - 1e-6)
@@ -119,4 +152,5 @@ def evaluate_stage_backtest(
         "max_drawdown": max_drawdown,
         "transaction_cost_bps_per_side": float(transaction_cost_bps_per_side),
         "slippage_bps_per_side": float(slippage_bps_per_side),
+        "feature_time_quality": cutoff_quality,
     }

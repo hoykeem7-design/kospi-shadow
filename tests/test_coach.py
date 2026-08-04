@@ -45,6 +45,21 @@ def test_open_discovery_requires_confirmation_when_live_market_disagrees():
     assert result["action"] == "WAIT_CONFIRMATION"
 
 
+def test_missing_probability_is_not_replaced_with_neutral_fallback():
+    session = resolve_session_context(datetime(2026, 8, 4, 9, 10, tzinfo=SEOUL))
+    result = build_coaching(
+        prediction={"probability_intraday_up": None, "probability_available": False},
+        promotion={"signal_enabled": True},
+        session=session,
+        index={"change_rate": 0.01},
+        futures={"change_rate": 0.01},
+    )
+    assert result["action"] == "WAIT"
+    assert result["headline"] == "확률 산출 불가"
+    assert result["alignment"]["base_direction"] == "unavailable"
+    assert result["alignment"]["aligned"] is None
+
+
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload

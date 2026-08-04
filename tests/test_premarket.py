@@ -11,6 +11,7 @@ from kospi_shadow.premarket import (
     UnavailablePredictor,
     build_auction_summary,
     build_opening_five_minute_summary,
+    build_stage_feature_bundle,
     compute_labels,
     data_timing,
     enforce_feature_cutoff,
@@ -30,7 +31,9 @@ from kospi_shadow.premarket_data import (
     build_premarket_experiment,
     configured_symbols,
     normalize_snapshot,
+    upsert_training_history,
 )
+from kospi_shadow.premarket_cli import run as run_premarket_cli
 
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -95,7 +98,52 @@ def test_same_time_history_uses_one_observation_per_prior_date():
         field="cumulative_volume",
         tolerance_minutes=2,
     )
-    assert values == [30.0, 20.0]
+    # 08:31 is a future observation relative to 08:30 and must be excluded.
+    assert values == [30.0, 10.0]
+
+
+@pytest.mark.parametrize("current_minute", [47, 50])
+def test_same_time_baseline_never_uses_a_future_minute(current_minute):
+    history = [
+        {"collected_at": "2026-08-01T08:45:00+09:00", "phase": "premarket", "premarket_summary": {"cumulative_volume": 45}},
+        {"collected_at": "2026-08-01T08:50:00+09:00", "phase": "opening_auction", "premarket_summary": {"cumulative_volume": 50}},
+        {"collected_at": "2026-08-01T08:55:00+09:00", "phase": "opening_auction", "premarket_summary": {"cumulative_volume": 55}},
+    ]
+    result = _same_time_baseline(
+        history,
+        now=datetime(2026, 8, 4, 8, current_minute, tzinfo=SEOUL),
+        field="cumulative_volume",
+        tolerance_minutes=10,
+    )
+    assert result == ([45.0] if current_minute == 47 else [50.0])
+
+
+def test_same_time_baseline_selects_closest_past_observation_per_date():
+    history = [
+        {"collected_at": "2026-08-01T08:43:00+09:00", "phase": "premarket", "premarket_summary": {"cumulative_volume": 43}},
+        {"collected_at": "2026-08-01T08:46:00+09:00", "phase": "premarket", "premarket_summary": {"cumulative_volume": 46}},
+        {"collected_at": "2026-08-01T08:47:00+09:00", "phase": "premarket", "premarket_summary": {"cumulative_volume": 47}},
+    ]
+    assert _same_time_baseline(
+        history,
+        now=datetime(2026, 8, 4, 8, 47, tzinfo=SEOUL),
+        field="cumulative_volume",
+        tolerance_minutes=10,
+    ) == [47.0]
+
+
+def test_same_time_baseline_is_missing_when_only_future_observations_exist():
+    history = [{
+        "collected_at": "2026-08-01T08:50:00+09:00",
+        "phase": "opening_auction",
+        "premarket_summary": {"cumulative_volume": 50},
+    }]
+    assert _same_time_baseline(
+        history,
+        now=datetime(2026, 8, 4, 8, 47, tzinfo=SEOUL),
+        field="cumulative_volume",
+        tolerance_minutes=10,
+    ) == []
 
 
 def test_post_open_only_reuses_same_trading_date_premarket_snapshot():
@@ -179,8 +227,9 @@ def test_first_five_minutes_features_and_vwap_position():
     assert result["first_1m_return"] == 0
     assert result["first_3m_return"] == pytest.approx(0.02)
     assert result["first_5m_return"] == pytest.approx(0.04)
-    assert result["vwap"] is not None
-    assert result["current_vs_vwap"] > 0
+    assert result["approximate_vwap"] is not None
+    assert result["current_vs_approximate_vwap"] > 0
+    assert result["vwap_is_approximate"] is True
     assert result["relative_volume"]["baseline_available"] is True
 
 
@@ -226,6 +275,21 @@ def test_open_hold_and_recovery(prices, expected_held, expected_recovery):
     assert result["open_recovery"] is expected_recovery
 
 
+def test_open_hold_uses_intrabar_low_and_documents_recovery_limit():
+    bars = [_bar(f"09:0{i}", 101, 10, open_price=100) for i in range(5)]
+    bars[1]["low"] = 99
+    result = build_opening_five_minute_summary(
+        bars,
+        previous_close=99,
+        baseline_volumes=[],
+        baseline_turnovers=[],
+        minimum_baseline_samples=20,
+    )
+    assert result["open_held"] is False
+    assert result["open_recovery"] is True
+    assert "same_minute" in result["open_recovery_observation_limit"]
+
+
 def test_gap_labels_cover_up_down_flat_and_missing():
     up = compute_labels(previous_close=100, open_price=102, price_0930=104, close_price=103, minimum_gap_price_unit=1)
     down = compute_labels(previous_close=100, open_price=98, price_0930=97, close_price=99, minimum_gap_price_unit=1)
@@ -249,6 +313,55 @@ def test_feature_cutoffs_reject_future_leakage_for_each_stage():
         [{"feature_name": "first_5m_return", "observed_at": "2026-08-04T09:04:59+09:00"}],
         datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL),
     )
+
+
+def test_missing_feature_timestamp_is_marked_unknown_quality():
+    validated = enforce_feature_cutoff(
+        [{"feature_name": "market_breadth", "value": 0.6}],
+        datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL),
+    )
+    assert validated[0]["data_quality"] == "unknown_time"
+    assert validated[0]["cutoff_validation"] == "timestamp_unavailable"
+
+
+def test_stage_bundles_keep_prior_stage_inputs_and_enforce_cutoffs():
+    pre = {"availability": "available", "observed_at": "2026-08-04T08:47:00+09:00", "data_quality": "good"}
+    auction = {"availability": "available", "observed_at": "2026-08-04T08:55:00+09:00", "data_quality": "good"}
+    opening = {"availability": "available", "observed_at": "2026-08-04T09:04:59+09:00", "data_quality": "good"}
+    market = {"availability": "available", "observed_at": "2026-08-04T09:05:00+09:00", "data_quality": "good"}
+    pre_bundle = build_stage_feature_bundle(
+        trading_date="2026-08-04",
+        stage="premarket_prediction",
+        premarket_summary=pre,
+        opening_auction_summary=auction,
+    )
+    post_bundle = build_stage_feature_bundle(
+        trading_date="2026-08-04",
+        stage="post_open_0905_prediction",
+        premarket_summary=pre,
+        opening_auction_summary=auction,
+        opening_five_minute_summary=opening,
+        market_indicators=market,
+    )
+    assert set(pre_bundle) >= {"premarket_summary", "opening_auction_summary"}
+    assert set(post_bundle) >= {
+        "premarket_summary", "opening_auction_summary",
+        "opening_five_minute_summary", "market_indicators",
+    }
+
+
+def test_premarket_bundle_excludes_observation_at_0900_or_later():
+    bundle = build_stage_feature_bundle(
+        trading_date="2026-08-04",
+        stage="premarket_prediction",
+        premarket_summary={"availability": "available", "observed_at": "2026-08-04T08:47:00+09:00"},
+        opening_auction_summary={"availability": "available", "observed_at": "2026-08-04T09:00:00+09:00"},
+    )
+    assert bundle["opening_auction_summary"] is None
+    assert bundle["excluded_features"] == [{
+        "feature_group": "opening_auction_summary",
+        "reason": "observed_after_stage_cutoff",
+    }]
 
 
 def test_explanations_are_split_without_fabricated_contribution_values():
@@ -378,6 +491,13 @@ def test_update_prediction_is_not_created_before_0905(tmp_path, monkeypatch):
     assert after["opening_five_minute_summary"]["data_complete"] is True
     assert after["post_open_0905_prediction"]["probability_available"] is False
     assert after["post_open_0905_prediction"]["opening_five_minutes_applied"] is True
+    assert set(before["premarket_prediction"]["input_features"]) >= {
+        "premarket_summary", "opening_auction_summary",
+    }
+    assert set(after["post_open_0905_prediction"]["input_features"]) >= {
+        "premarket_summary", "opening_auction_summary",
+        "opening_five_minute_summary", "market_indicators",
+    }
 
 
 def test_configured_symbols_accepts_only_explicit_valid_symbols(tmp_path, monkeypatch):
@@ -449,3 +569,69 @@ def test_backtest_interface_reports_calibration_and_cost_metrics_when_labeled():
     assert result["roc_auc"] == 1.0
     assert result["calibration"]["expected_calibration_error"] is not None
     assert result["cost_adjusted_expected_return"] is not None
+
+
+def test_backtest_dataset_rejects_future_feature_observations():
+    records = [BacktestRecord(
+        "005930", "2026-08-01", "premarket_prediction", 0.6, True,
+        feature_bundle={"premarket_summary": {
+            "availability": "available",
+            "observed_at": "2026-08-01T09:00:00+09:00",
+        }},
+    )]
+    with pytest.raises(ValueError, match="future data leakage"):
+        evaluate_stage_backtest(
+            records,
+            stage="premarket_prediction",
+            minimum_sample_count=1,
+            transaction_cost_bps_per_side=5,
+            slippage_bps_per_side=5,
+        )
+
+
+def test_normalized_training_history_upserts_one_record_per_date_and_stage(tmp_path):
+    path = tmp_path / "history" / "training" / "005930.jsonl"
+    upsert_training_history(path, {"record_key": "2026-08-04:premarket_prediction", "value": 1}, maximum_records=5000)
+    upsert_training_history(path, {"record_key": "2026-08-04:premarket_prediction", "value": 2}, maximum_records=5000)
+    upsert_training_history(path, {"record_key": "2026-08-04:post_open_0905_prediction", "value": 3}, maximum_records=5000)
+    rows = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rows) == 2
+    assert any('"value": 2' in row for row in rows)
+
+
+def test_smoke_mode_fails_when_no_symbols_are_configured(tmp_path, monkeypatch):
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "project:\n  timezone: Asia/Seoul\ndata:\n  cache_dir: data/cache\n"
+        "model: {}\npromotion: {}\npremarket:\n  symbols: []\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("PREMARKET_SYMBOLS", raising=False)
+    assert run_premarket_cli([
+        "--config", "config.yml", "--project-root", str(tmp_path), "--smoke",
+    ]) == 2
+    status = (tmp_path / "outputs" / "premarket_collection_status.json").read_text(encoding="utf-8")
+    assert '"configured_symbol_count": 0' in status
+
+
+def test_workflows_serialize_history_and_pwa_advertises_actual_deploy_times():
+    root = Path(__file__).parents[1]
+    collector = (root / ".github/workflows/premarket-collector.yml").read_text(encoding="utf-8")
+    coach = (root / ".github/workflows/coach-app.yml").read_text(encoding="utf-8")
+    app = (root / "app/app.js").read_text(encoding="utf-8")
+    assert "group: kospi-shadow-live-data" in collector
+    assert "group: kospi-shadow-live-data" in coach
+    assert "premarket-history" in collector and "premarket-history" in coach
+    assert "actions/cache" not in collector
+    update_line = next(line for line in app.splitlines() if line.startswith("const AUTO_UPDATE_TIMES"))
+    assert '"09:10"' in update_line
+    for collector_only in ('"08:50"', '"08:55"', '"09:00"', '"09:05"'):
+        assert collector_only not in update_line
+
+
+def test_no_neutral_probability_fallback_remains_in_coach_or_app():
+    root = Path(__file__).parents[1]
+    coach = (root / "src/kospi_shadow/coach.py").read_text(encoding="utf-8")
+    app = (root / "app/app.js").read_text(encoding="utf-8")
+    assert 'probability_intraday_up", 0.5' not in coach
+    assert "probability_intraday_up ?? .5" not in app

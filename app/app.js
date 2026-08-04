@@ -5,7 +5,10 @@ const clsFor = (value) => value == null || Math.abs(value) < 1e-12 ? "neutral" :
 const safeText = (value, fallback="--") => value == null || value === "" ? fallback : String(value);
 const escapeHtml = (value) => safeText(value, "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
 const safeUrl = (value) => { try { const url = new URL(String(value)); return ["http:","https:"].includes(url.protocol) ? url.href : "#"; } catch { return "#"; } };
-const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","08:50","08:55","09:00","09:05","09:10","12:00","15:20","15:35","20:05"];
+// These are actual Coach workflow deployment times. Collector-only snapshots
+// are not advertised as app updates; the completed 09:05 bundle is published
+// by the 09:10 Coach deployment.
+const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","09:10","12:00","15:20","15:35","20:05"];
 
 let deferredPrompt;
 let currentDashboard = null;
@@ -208,6 +211,8 @@ function renderPremarketSymbol(item) {
     ["예상체결대금", metricValue(auction.expected_turnover, value => fmtNum(value, 0), auction.unavailable_reason)],
     ["가격 안정도", auction.expected_price_stability?.available ? fmtPct(auction.expected_price_stability.value, 1) : missingLabel(auction.expected_price_stability?.unavailable_reason, "데이터 부족")],
     ["수량 변화", metricValue(auction.expected_volume_change, value => fmtPct(value, 1))],
+    ["마지막 1분 가격 변동폭", auction.last_1m_collection_status === "unavailable" ? "미수집" : metricValue(auction.last_1m_expected_price_range, fmtNum)],
+    ["마지막 1분 수량 변화", auction.last_1m_collection_status === "unavailable" ? "미수집" : metricValue(auction.last_1m_expected_volume_change, value => fmtPct(value, 1))],
     ["업데이트 수", fmtNum(auction.update_count, 0)],
     ["관측 구간", auction.observation_start && auction.observation_end ? `${auction.observation_start} ~ ${auction.observation_end}` : "데이터 미수신"]
   ]);
@@ -218,8 +223,8 @@ function renderPremarketSymbol(item) {
     ["첫 5분 수익률", metricValue(opening.first_5m_return, value => fmtPct(value, 2), opening.unavailable_reason)],
     ["첫 5분 거래량", metricValue(opening.volume, value => fmtNum(value, 0), opening.unavailable_reason)],
     ["상대거래량", relativeValue(opening.relative_volume)],
-    ["VWAP", metricValue(opening.vwap, fmtNum, opening.unavailable_reason)],
-    ["VWAP 대비", metricValue(opening.current_vs_vwap, value => fmtPct(value, 2), opening.unavailable_reason)],
+    ["근사 VWAP", metricValue(opening.approximate_vwap, fmtNum, opening.unavailable_reason)],
+    ["근사 VWAP 대비", metricValue(opening.current_vs_approximate_vwap, value => fmtPct(value, 2), opening.unavailable_reason)],
     ["시가 유지", opening.open_held == null ? "데이터 부족" : (opening.open_held ? "유지" : "이탈")],
     ["이탈 후 회복", opening.open_recovery == null ? "데이터 부족" : (opening.open_recovery ? "회복" : "미회복")]
   ]);
@@ -264,18 +269,21 @@ function renderFreshness(data) {
 function render(data) {
   currentDashboard = data;
   const session = runtimeSession();
-  const p = Number(data.prediction.probability_intraday_up ?? .5);
+  const rawProbability = data?.prediction?.probability_intraday_up;
+  const p = rawProbability == null ? null : Number(rawProbability);
+  const probabilityAvailable = data?.prediction?.probability_available !== false && p != null && Number.isFinite(p);
   $("sessionBadge").textContent = session.label;
   $("generatedAt").textContent = new Date(data.generated_at_seoul).toLocaleString("ko-KR", {hour:"2-digit",minute:"2-digit",month:"numeric",day:"numeric",timeZone:"Asia/Seoul"});
   $("sessionTitle").textContent = data.coaching.headline;
   $("sessionDescription").textContent = session.description;
   renderFreshness(data);
-  $("probability").textContent = fmtPct(p,1);
-  $("gauge").style.setProperty("--p", Math.max(0,Math.min(100,p*100)));
+  $("probability").textContent = probabilityAvailable ? fmtPct(p,1) : "--";
+  $("gauge").classList.toggle("unavailable", !probabilityAvailable);
+  $("gauge").style.setProperty("--p", probabilityAvailable ? Math.max(0,Math.min(100,p*100)) : 0);
   $("targetDate").textContent = data.prediction.candidate_target_date;
-  const direction = safeText(data.prediction.research_direction,"FLAT");
-  $("directionBadge").textContent = direction;
-  $("directionBadge").className = `direction ${direction.toLowerCase()}`;
+  const direction = probabilityAvailable ? safeText(data.prediction.research_direction,"FLAT") : "UNAVAILABLE";
+  $("directionBadge").textContent = probabilityAvailable ? direction : "확률 산출 불가";
+  $("directionBadge").className = `direction ${probabilityAvailable ? direction.toLowerCase() : "flat"}`;
   $("coachHeadline").textContent = data.coaching.headline;
   $("coachRationale").textContent = data.coaching.rationale;
   $("timingScore").textContent = `${fmtNum(data.coaching.timing_score,0)}점`;

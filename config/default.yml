@@ -80,5 +80,10 @@ premarket:
   backtest_transaction_cost_bps_per_side: 5.0
   backtest_slippage_bps_per_side: 5.0
   outlier_iqr_multiplier: 5.0
-  maximum_history_records_per_symbol: 2000
+  # Raw snapshots and normalized training records are separate. The default
+  # raw capacity exceeds five years at roughly ten snapshots per trading day;
+  # training storage keeps at most two normalized stage records per day.
+  history_dir: data/premarket_history
+  maximum_raw_history_records_per_symbol: 25000
+  maximum_training_records_per_symbol: 5000
   signal_strength_thresholds: null  # unavailable until calibrated on validation data

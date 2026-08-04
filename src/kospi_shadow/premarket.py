@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from datetime import datetime, time as dtime
 from statistics import median, pstdev
 from typing import Any, Iterable, Protocol
@@ -245,21 +246,6 @@ def build_auction_summary(
     price_direction = 0 if price_return in (None, 0) else (1 if price_return > 0 else -1)
     nxt_return = (nxt_price / prev - 1.0) if nxt_price is not None and prev not in (None, 0) else None
     nxt_direction = 0 if nxt_return in (None, 0) else (1 if nxt_return > 0 else -1)
-    last_minute = usable
-    try:
-        last_observed = _seoul(datetime.fromisoformat(str(last.get("observed_at"))))
-        last_minute = [
-            item for item in usable
-            if item.get("observed_at")
-            and 0 <= (last_observed - _seoul(datetime.fromisoformat(str(item["observed_at"])))).total_seconds() <= 60
-        ]
-    except (TypeError, ValueError):
-        last_minute = []
-    last_minute_prices = [_finite(item.get("expected_price")) for item in last_minute]
-    valid_last_minute_prices = [value for value in last_minute_prices if value is not None]
-    last_minute_quantities = [_finite(item.get("expected_volume")) for item in last_minute]
-    first_last_minute_quantity = next((value for value in last_minute_quantities if value is not None), None)
-    last_last_minute_quantity = next((value for value in reversed(last_minute_quantities) if value is not None), None)
     return {
         "availability": "available" if last_price is not None else "unavailable",
         "unavailable_reason": None if last_price is not None else "opening_auction_data_not_received",
@@ -270,15 +256,13 @@ def build_auction_summary(
         "expected_price_stability": expected_price_stability(prices),
         "expected_volume_change": quantity_change,
         "expected_price_vs_nxt_final": nxt_difference,
-        "last_1m_expected_price_range": (
-            max(valid_last_minute_prices) - min(valid_last_minute_prices)
-            if len(valid_last_minute_prices) >= 2 else None
-        ),
-        "last_1m_expected_volume_change": (
-            last_last_minute_quantity / first_last_minute_quantity - 1.0
-            if first_last_minute_quantity not in (None, 0) and last_last_minute_quantity is not None
-            else None
-        ),
+        # Scheduled snapshots are five minutes apart. They cannot truthfully
+        # represent a final-one-minute series, even when two timestamps happen
+        # to fall within a minute because provider time semantics are uncertain.
+        "last_1m_expected_price_range": None,
+        "last_1m_expected_volume_change": None,
+        "last_1m_collection_status": "unavailable",
+        "last_1m_unavailable_reason": "sub_minute_auction_series_not_collected",
         "direction_matches_nxt": (
             price_direction == nxt_direction
             if price_direction and nxt_direction
@@ -309,24 +293,52 @@ def vwap(prices: Iterable[Any], volumes: Iterable[Any]) -> float | None:
     return numerator / denominator if denominator > 0 else None
 
 
-def open_state(prices: Iterable[Any], open_price: Any, gap_direction: str | None) -> dict[str, Any]:
+def open_state(observations: Iterable[Any], open_price: Any, gap_direction: str | None) -> dict[str, Any]:
+    """Evaluate opening-price hold using bar extremes when they are available.
+
+    Recovery is deliberately conservative: an intrabar breach is considered
+    recovered only when a *later* bar closes back across the open. Minute OHLC
+    data cannot establish the ordering of a breach and recovery inside one bar.
+    """
     opening = _finite(open_price)
-    values = [number for value in prices if (number := _finite(value)) is not None]
-    if opening is None or not values or gap_direction not in {"up", "down"}:
+    rows: list[dict[str, float | None]] = []
+    for item in observations:
+        if isinstance(item, dict):
+            close = _finite(item.get("price"))
+            rows.append({
+                "close": close,
+                "low": _finite(item.get("low")) if _finite(item.get("low")) is not None else close,
+                "high": _finite(item.get("high")) if _finite(item.get("high")) is not None else close,
+            })
+        elif (number := _finite(item)) is not None:
+            rows.append({"close": number, "low": number, "high": number})
+    if opening is None or not rows or gap_direction not in {"up", "down"}:
         return {
             "open_held": None,
             "open_recovery": None,
             "unavailable_reason": "directional_gap_and_prices_required",
+            "recovery_observation_limit": "minute_ohlc_sequence_unknown",
         }
     if gap_direction == "up":
-        breached = [index for index, price in enumerate(values) if price < opening]
+        breached = [index for index, row in enumerate(rows) if row["low"] is not None and row["low"] < opening]
         held = not breached
-        recovered = bool(breached and any(price >= opening for price in values[breached[0] + 1 :]))
+        recovered = bool(breached and any(
+            row["close"] is not None and row["close"] >= opening
+            for row in rows[breached[0] + 1 :]
+        ))
     else:
-        breached = [index for index, price in enumerate(values) if price > opening]
+        breached = [index for index, row in enumerate(rows) if row["high"] is not None and row["high"] > opening]
         held = not breached
-        recovered = bool(breached and any(price <= opening for price in values[breached[0] + 1 :]))
-    return {"open_held": held, "open_recovery": recovered, "unavailable_reason": None}
+        recovered = bool(breached and any(
+            row["close"] is not None and row["close"] <= opening
+            for row in rows[breached[0] + 1 :]
+        ))
+    return {
+        "open_held": held,
+        "open_recovery": recovered,
+        "unavailable_reason": None,
+        "recovery_observation_limit": "same_minute_recovery_not_inferable_from_ohlc",
+    }
 
 
 def compute_labels(
@@ -408,10 +420,12 @@ def build_opening_five_minute_summary(
         gap_direction = "flat" if opening == prev else ("up" if opening > prev else "down")
     else:
         gap_direction = None
-    state = open_state(valid_prices, opening, gap_direction)
+    state = open_state(window, opening, gap_direction)
     first1 = safe_ratio(valid_prices[0], opening) - 1.0 if valid_prices and opening not in (None, 0) else None
     first3 = safe_ratio(valid_prices[min(2, len(valid_prices) - 1)], opening) - 1.0 if valid_prices and opening not in (None, 0) else None
     first5 = safe_ratio(current, opening) - 1.0 if current is not None and opening not in (None, 0) else None
+    # KIS minute bars expose a minute close and volume, not every execution.
+    # This is a close*volume approximation and must not be labelled true VWAP.
     calculated_vwap = vwap(prices, volumes)
     relative_volume = relative_metric(
         total_volume, baseline_volumes, minimum_sample_count=minimum_baseline_samples
@@ -440,6 +454,7 @@ def build_opening_five_minute_summary(
         "first_5m_return": first5,
         "open_held": state["open_held"],
         "open_recovery": state["open_recovery"],
+        "open_recovery_observation_limit": state["recovery_observation_limit"],
         "high": max(valid_highs) if valid_highs else None,
         "low": min(valid_lows) if valid_lows else None,
         "range": (max(valid_highs) - min(valid_lows)) if valid_highs and valid_lows else None,
@@ -447,8 +462,14 @@ def build_opening_five_minute_summary(
         "relative_volume": relative_volume,
         "turnover": total_turnover,
         "relative_turnover": relative_turnover,
+        "approximate_vwap": calculated_vwap,
+        "vwap_method": "minute_close_times_volume",
+        "vwap_is_approximate": True,
+        # Backward-compatible aliases. Consumers must inspect
+        # vwap_is_approximate; the PWA uses the explicit fields above.
         "vwap": calculated_vwap,
         "current_price": current,
+        "current_vs_approximate_vwap": (current / calculated_vwap - 1.0) if current is not None and calculated_vwap not in (None, 0) else None,
         "current_vs_vwap": (current / calculated_vwap - 1.0) if current is not None and calculated_vwap not in (None, 0) else None,
         "current_vs_open": (current / opening - 1.0) if current is not None and opening not in (None, 0) else None,
         "execution_imbalance": None,
@@ -491,7 +512,7 @@ def unavailable_prediction(
         "observed_at": observed_at,
         "data_quality": "unavailable",
         "feature_cutoff": "09:00" if stage == "premarket_prediction" else "09:05",
-        "used_data_range": "08:00-08:50" if stage == "premarket_prediction" else "09:00-09:05",
+        "used_data_range": "08:00-09:00 (cutoff exclusive)" if stage == "premarket_prediction" else "08:00-09:05",
         "opening_five_minutes_applied": stage == "post_open_0905_prediction",
     }
 
@@ -513,25 +534,141 @@ class UnavailablePredictor:
         self.minimum_required_sample_count = int(minimum_required_sample_count)
 
     def predict(self, features: dict[str, Any], *, stage: str) -> dict[str, Any]:
-        sample_count = int(features.get("baseline_sample_count") or 0)
-        return unavailable_prediction(
+        sample_count = max(
+            [int(item.get("baseline_sample_count") or 0) for item in _timed_feature_dicts(features)]
+            or [0]
+        )
+        result = unavailable_prediction(
             stage,
             self.reason,
             sample_count=sample_count,
             minimum_required_sample_count=self.minimum_required_sample_count,
             observed_at=features.get("observed_at"),
         )
+        result["input_features"] = features
+        result["framework_status"] = "two_stage_data_feature_validation_framework_model_untrained"
+        return result
 
 
-def enforce_feature_cutoff(features: Iterable[dict[str, Any]], cutoff: datetime) -> None:
+def enforce_feature_cutoff(
+    features: Iterable[dict[str, Any]],
+    cutoff: datetime,
+    *,
+    inclusive: bool = True,
+) -> list[dict[str, Any]]:
+    """Validate point-in-time features and annotate unknown timestamps.
+
+    The premarket model uses ``inclusive=False`` at 09:00. The 09:05 model
+    uses ``inclusive=True``. Missing timestamps remain usable only as unknown
+    quality data; they are never silently treated as point-in-time verified.
+    """
     cutoff_seoul = _seoul(cutoff)
+    validated: list[dict[str, Any]] = []
     for feature in features:
+        checked = deepcopy(feature)
         text = feature.get("observed_at")
         if not text:
+            checked["data_quality"] = "unknown_time"
+            checked["cutoff_validation"] = "timestamp_unavailable"
+            validated.append(checked)
             continue
         observed = _seoul(datetime.fromisoformat(str(text)))
-        if observed > cutoff_seoul:
+        invalid = observed > cutoff_seoul or (not inclusive and observed == cutoff_seoul)
+        if invalid:
             raise ValueError(f"future data leakage: {feature.get('feature_name', 'unknown')} observed after cutoff")
+        checked["cutoff_validation"] = "passed"
+        validated.append(checked)
+    return validated
+
+
+def _timed_feature_dicts(value: Any, prefix: str = "feature") -> list[dict[str, Any]]:
+    """Flatten timed dictionaries without manufacturing timestamps."""
+    result: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        if "observed_at" in value or "data_quality" in value or "availability" in value:
+            result.append({"feature_name": prefix, **value})
+        for key, nested in value.items():
+            if isinstance(nested, (dict, list, tuple)):
+                result.extend(_timed_feature_dicts(nested, f"{prefix}.{key}"))
+    elif isinstance(value, (list, tuple)):
+        for index, nested in enumerate(value):
+            result.extend(_timed_feature_dicts(nested, f"{prefix}[{index}]"))
+    return result
+
+
+def stage_cutoff(trading_date: str, stage: str) -> tuple[datetime, bool]:
+    if stage == "premarket_prediction":
+        return datetime.fromisoformat(f"{trading_date}T09:00:00+09:00"), False
+    if stage == "post_open_0905_prediction":
+        return datetime.fromisoformat(f"{trading_date}T09:05:00+09:00"), True
+    raise ValueError("unknown two-stage prediction stage")
+
+
+def validate_stage_feature_bundle(
+    bundle: dict[str, Any], *, trading_date: str, stage: str
+) -> list[dict[str, Any]]:
+    cutoff, inclusive = stage_cutoff(trading_date, stage)
+    return enforce_feature_cutoff(
+        _timed_feature_dicts(bundle), cutoff, inclusive=inclusive
+    )
+
+
+def build_stage_feature_bundle(
+    *,
+    trading_date: str,
+    stage: str,
+    premarket_summary: dict[str, Any],
+    opening_auction_summary: dict[str, Any],
+    opening_five_minute_summary: dict[str, Any] | None = None,
+    market_indicators: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the actual predictor input and exclude components past cutoff."""
+    cutoff, inclusive = stage_cutoff(trading_date, stage)
+    components: dict[str, dict[str, Any] | None] = {
+        "premarket_summary": deepcopy(premarket_summary),
+        "opening_auction_summary": deepcopy(opening_auction_summary),
+    }
+    if stage == "post_open_0905_prediction":
+        components["opening_five_minute_summary"] = deepcopy(opening_five_minute_summary)
+        components["market_indicators"] = deepcopy(market_indicators)
+
+    excluded: list[dict[str, str]] = []
+    for name, component in list(components.items()):
+        if component is None:
+            continue
+        try:
+            enforce_feature_cutoff(
+                _timed_feature_dicts(component, name), cutoff, inclusive=inclusive
+            )
+        except (TypeError, ValueError):
+            components[name] = None
+            excluded.append({"feature_group": name, "reason": "observed_after_stage_cutoff"})
+            continue
+        if not component.get("observed_at") and component.get("availability") == "available":
+            component["data_quality"] = "unknown_time"
+            component["cutoff_validation"] = "timestamp_unavailable"
+        else:
+            component["cutoff_validation"] = "passed" if component.get("observed_at") else "not_observed"
+
+    observed_times = [
+        str(component.get("observed_at"))
+        for component in components.values()
+        if component and component.get("observed_at")
+    ]
+    bundle: dict[str, Any] = {
+        "stage": stage,
+        "feature_cutoff": cutoff.isoformat(),
+        "cutoff_inclusive": inclusive,
+        **components,
+        "excluded_features": excluded,
+        "observed_at": max(observed_times) if observed_times else None,
+        "data_quality": "unknown_time" if any(
+            component and component.get("data_quality") == "unknown_time"
+            for component in components.values()
+        ) else "available",
+    }
+    validate_stage_feature_bundle(bundle, trading_date=trading_date, stage=stage)
+    return bundle
 
 
 def _factor(
@@ -584,7 +721,7 @@ def explanation_factors(
     open_observed = opening.get("observed_at")
     for name, label, value, reference in (
         ("first_5m_return", "첫 5분 수익률", opening.get("first_5m_return"), 0.0),
-        ("current_vs_vwap", "VWAP 대비 현재가", opening.get("current_vs_vwap"), 0.0),
+        ("current_vs_approximate_vwap", "근사 VWAP 대비 현재가", opening.get("current_vs_approximate_vwap"), 0.0),
         ("market_breadth", "시장 상승 종목 비율", opening.get("market_breadth"), 0.5),
     ):
         numeric = _finite(value)

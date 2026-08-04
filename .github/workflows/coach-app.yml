@@ -21,13 +21,13 @@ on:
       timezone: "Asia/Seoul"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
-  group: kospi-shadow-coach-production
-  cancel-in-progress: true
+  group: kospi-shadow-live-data
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -41,9 +41,35 @@ jobs:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
+      PREMARKET_HISTORY_DIR: premarket-history-store/history
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve durable history ref
+        id: history_ref
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin refs/heads/premarket-history >/dev/null 2>&1; then
+            echo "ref=premarket-history" >> "$GITHUB_OUTPUT"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out durable premarket history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.history_ref.outputs.ref }}
+          path: premarket-history-store
+          fetch-depth: 1
+      - name: Initialize durable history branch
+        if: ${{ steps.history_ref.outputs.exists == 'false' }}
+        shell: bash
+        run: |
+          git -C premarket-history-store switch --orphan premarket-history
+          git -C premarket-history-store rm -rf .
+          mkdir -p premarket-history-store/history
+          touch premarket-history-store/history/.gitkeep
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -84,6 +110,16 @@ jobs:
       - run: pip install .
       - name: Refresh prediction and build session-aware PWA
         run: kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+      - name: Persist normalized and raw premarket history
+        shell: bash
+        run: |
+          git -C premarket-history-store config user.name "github-actions[bot]"
+          git -C premarket-history-store config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C premarket-history-store add history
+          if ! git -C premarket-history-store diff --cached --quiet; then
+            git -C premarket-history-store commit -m "Store premarket history for run $GITHUB_RUN_ID"
+            git -C premarket-history-store push origin HEAD:premarket-history
+          fi
       - name: Validate deploy directory
         shell: bash
         run: |

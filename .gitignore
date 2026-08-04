@@ -6,6 +6,8 @@ __pycache__/
 *.joblib
 data/cache/*.csv
 data/cache/premarket/
+data/premarket_history/
+premarket-history-store/
 outputs/*
 !outputs/.gitkeep
 state/

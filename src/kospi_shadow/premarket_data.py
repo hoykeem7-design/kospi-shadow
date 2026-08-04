@@ -13,6 +13,7 @@ from .premarket import (
     PREDICTION_LABELS,
     SEOUL,
     UnavailablePredictor,
+    build_stage_feature_bundle,
     build_auction_summary,
     build_opening_five_minute_summary,
     compute_labels,
@@ -244,8 +245,20 @@ def normalize_bars(rows: list[dict[str, Any]], *, received_at: datetime, source:
     return sorted(bars, key=lambda item: item["minute"])
 
 
-def _history_path(project_root: Path, cache_dir: str, symbol: str) -> Path:
-    return project_root / cache_dir / "premarket" / f"{symbol}.jsonl"
+def _history_path(project_root: Path, history_dir: str, symbol: str) -> Path:
+    """Raw point-in-time history, separated from the general market cache."""
+    root = Path(history_dir)
+    if not root.is_absolute():
+        root = project_root / root
+    return root / "raw" / f"{symbol}.jsonl"
+
+
+def _training_history_path(project_root: Path, history_dir: str, symbol: str) -> Path:
+    """One normalized learning record per symbol/date/stage."""
+    root = Path(history_dir)
+    if not root.is_absolute():
+        root = project_root / root
+    return root / "training" / f"{symbol}.jsonl"
 
 
 def load_history(path: Path) -> list[dict[str, Any]]:
@@ -272,6 +285,16 @@ def append_history(path: Path, record: dict[str, Any], *, maximum_records: int) 
     path.write_text("".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records), encoding="utf-8")
 
 
+def upsert_training_history(path: Path, record: dict[str, Any], *, maximum_records: int) -> None:
+    records = load_history(path)
+    key = record.get("record_key")
+    records = [item for item in records if item.get("record_key") != key]
+    records.append(record)
+    records = sorted(records, key=lambda item: str(item.get("record_key") or ""))[-int(maximum_records) :]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records), encoding="utf-8")
+
+
 def _minute_of_day(iso_text: str) -> int | None:
     try:
         parsed = datetime.fromisoformat(iso_text).astimezone(SEOUL)
@@ -285,23 +308,33 @@ def _same_time_baseline(
 ) -> list[float]:
     current_minute = now.hour * 60 + now.minute
     current_date = now.date()
-    values: list[float] = []
-    seen_dates: set[str] = set()
-    for item in reversed(history):
+    # Select at most one record per prior trading date. A record is eligible
+    # only when its minute is not later than the current minute; tolerance is
+    # backward-looking, never symmetric.
+    candidates: dict[str, tuple[int, datetime, float]] = {}
+    for item in history:
         if item.get("phase") not in {"premarket", "opening_auction"}:
             continue
         text = item.get("collected_at")
-        minute = _minute_of_day(str(text)) if text else None
-        if minute is None or abs(minute - current_minute) > int(tolerance_minutes):
+        if not text:
             continue
-        date_text = str(text)[:10]
-        if date_text == current_date.isoformat() or date_text in seen_dates:
+        try:
+            observed = datetime.fromisoformat(str(text)).astimezone(SEOUL)
+        except (TypeError, ValueError):
+            continue
+        minute = observed.hour * 60 + observed.minute
+        if minute > current_minute or current_minute - minute > int(tolerance_minutes):
+            continue
+        date_text = observed.date().isoformat()
+        if observed.date() == current_date:
             continue
         value = _number((item.get("premarket_summary") or {}).get(field))
-        if value is not None:
-            seen_dates.add(date_text)
-            values.append(value)
-    return values
+        if value is None:
+            continue
+        previous = candidates.get(date_text)
+        if previous is None or (minute, observed) > (previous[0], previous[1]):
+            candidates[date_text] = (minute, observed, value)
+    return [candidates[date][2] for date in sorted(candidates, reverse=True)]
 
 
 def _opening_baseline(history: list[dict[str, Any]], field: str) -> list[float]:
@@ -448,18 +481,27 @@ def _build_premarket_summary(
     }
 
 
-def _unavailable_symbol_payload(symbol: dict[str, str], phase: dict[str, str], reason: str) -> dict[str, Any]:
+def _unavailable_symbol_payload(
+    symbol: dict[str, str], phase: dict[str, str], reason: str, *, trading_date: str
+) -> dict[str, Any]:
     predictor = UnavailablePredictor(reason)
-    pre = {"availability": "unavailable", "unavailable_reason": reason, "data_quality": "unavailable"}
+    pre = {"availability": "unavailable", "unavailable_reason": reason, "data_quality": "unavailable", "observed_at": None}
+    auction = build_auction_summary([], previous_close=None, nxt_final_price=None)
+    bundle = build_stage_feature_bundle(
+        trading_date=trading_date,
+        stage="premarket_prediction",
+        premarket_summary=pre,
+        opening_auction_summary=auction,
+    )
     return {
         **symbol,
         "market_phase": phase["phase"],
         "phase_display": phase["display"],
         "data_availability": {"availability": "unavailable", "unavailable_reason": reason},
         "premarket_summary": pre,
-        "opening_auction_summary": build_auction_summary([], previous_close=None, nxt_final_price=None),
+        "opening_auction_summary": auction,
         "opening_five_minute_summary": {"availability": "unavailable", "unavailable_reason": reason},
-        "premarket_prediction": predictor.predict(pre, stage="premarket_prediction"),
+        "premarket_prediction": predictor.predict(bundle, stage="premarket_prediction"),
         "post_open_0905_prediction": None,
         "positive_factors": [],
         "negative_factors": [],
@@ -474,6 +516,7 @@ def build_premarket_experiment(
     *,
     now_seoul: datetime,
     market_snapshot: dict[str, Any] | None,
+    persist_history: bool = True,
 ) -> dict[str, Any]:
     now = now_seoul.astimezone(SEOUL) if now_seoul.tzinfo else now_seoul.replace(tzinfo=SEOUL)
     phase = resolve_market_phase(now)
@@ -481,7 +524,8 @@ def build_premarket_experiment(
     symbols = configured_symbols(settings)
     base = {
         "schema_version": 1,
-        "feature_name": "two_stage_nxt_premarket_prediction",
+        "feature_name": "two_stage_nxt_premarket_framework",
+        "display_name": "2단계 데이터 수집·피처·검증 프레임워크. 종목 확률 모델은 미학습 상태.",
         "market_phase": phase["phase"],
         "phase_display": phase["display"],
         "timezone": "Asia/Seoul",
@@ -509,23 +553,33 @@ def build_premarket_experiment(
     data_cfg = settings.section("data")
     timeout = int(data_cfg.get("request_timeout_seconds", 30))
     retries = int(data_cfg.get("request_retries", 4))
-    cache_dir = str(data_cfg.get("cache_dir", "data/cache"))
+    history_dir = os.getenv(
+        "PREMARKET_HISTORY_DIR",
+        str(cfg.get("history_dir", "data/premarket_history")),
+    )
     baseline_period = int(cfg.get("baseline_sessions", 20))
     minimum_baseline_samples = int(cfg.get("minimum_baseline_samples", 20))
     tolerance = int(cfg.get("same_time_tolerance_minutes", 5))
     stale_after = int(cfg.get("stale_after_seconds", 180))
-    maximum_records = int(cfg.get("maximum_history_records_per_symbol", 2000))
+    maximum_raw_records = int(cfg.get("maximum_raw_history_records_per_symbol", 25000))
+    maximum_training_records = int(cfg.get("maximum_training_records_per_symbol", 5000))
     minimum_model_samples = int(cfg.get("minimum_model_samples", 252))
     try:
         provider = KisStockProvider(timeout=timeout, retries=retries)
     except Exception:
-        base["symbols"] = [_unavailable_symbol_payload(item, phase, "kis_provider_unavailable") for item in symbols]
+        base["symbols"] = [
+            _unavailable_symbol_payload(
+                item, phase, "kis_provider_unavailable", trading_date=now.date().isoformat()
+            )
+            for item in symbols
+        ]
         base["data_availability"] = {"availability": "unavailable", "unavailable_reason": "kis_provider_unavailable"}
         return base
 
     for item in symbols:
         symbol = item["symbol"]
-        path = _history_path(project_root, cache_dir, symbol)
+        path = _history_path(project_root, history_dir, symbol)
+        training_path = _training_history_path(project_root, history_dir, symbol)
         history = load_history(path)
         warnings: list[str] = []
         nxt_snapshot: dict[str, Any] | None = None
@@ -625,6 +679,20 @@ def build_premarket_experiment(
             opening_summary["market_decliners"] = decliners
             opening_summary["market_advance_decline_ratio"] = safe_ratio(advancers, decliners)
             opening_summary["market_index_direction"] = _number(market_snapshot.get("change_rate"))
+        market_indicators = {
+            "availability": "available" if market_snapshot else "unavailable",
+            "unavailable_reason": None if market_snapshot else "market_indicators_not_received",
+            "market_index_direction": opening_summary.get("market_index_direction"),
+            "market_breadth": opening_summary.get("market_breadth"),
+            "market_advancers": opening_summary.get("market_advancers"),
+            "market_decliners": opening_summary.get("market_decliners"),
+            "market_advance_decline_ratio": opening_summary.get("market_advance_decline_ratio"),
+            "sector_index_direction": opening_summary.get("sector_index_direction"),
+            "observed_at": (market_snapshot or {}).get("observed_at"),
+            "received_at": (market_snapshot or {}).get("received_at"),
+            "data_quality": (market_snapshot or {}).get("data_quality", "unknown_time" if market_snapshot else "unavailable"),
+            "source": (market_snapshot or {}).get("source", "KIS KRX market snapshot" if market_snapshot else None),
+        }
         opening_summary["actual_open_vs_nxt_final"] = safe_ratio(
             opening_summary.get("actual_open"), premarket_summary.get("nxt_final_price")
         )
@@ -647,10 +715,28 @@ def build_premarket_experiment(
             "stock_level_training_and_calibration_unavailable",
             minimum_required_sample_count=minimum_model_samples,
         )
-        pre_prediction = predictor.predict(premarket_summary, stage="premarket_prediction")
-        post_prediction = (
-            predictor.predict(opening_summary, stage="post_open_0905_prediction")
+        pre_bundle = build_stage_feature_bundle(
+            trading_date=now.date().isoformat(),
+            stage="premarket_prediction",
+            premarket_summary=premarket_summary,
+            opening_auction_summary=auction_summary,
+        )
+        pre_prediction = predictor.predict(pre_bundle, stage="premarket_prediction")
+        post_bundle = (
+            build_stage_feature_bundle(
+                trading_date=now.date().isoformat(),
+                stage="post_open_0905_prediction",
+                premarket_summary=premarket_summary,
+                opening_auction_summary=auction_summary,
+                opening_five_minute_summary=opening_summary,
+                market_indicators=market_indicators,
+            )
             if t >= dtime(9, 5) and opening_summary.get("data_complete")
+            else None
+        )
+        post_prediction = (
+            predictor.predict(post_bundle, stage="post_open_0905_prediction")
+            if post_bundle is not None
             else None
         )
         positive, negative = explanation_factors(
@@ -666,7 +752,25 @@ def build_premarket_experiment(
             "opening_five_minute_summary": opening_summary if opening_summary.get("data_complete") else None,
             "labels": labels,
         }
-        append_history(path, record, maximum_records=maximum_records)
+        if persist_history:
+            append_history(path, record, maximum_records=maximum_raw_records)
+            training_bundle = post_bundle or pre_bundle
+            training_stage = (
+                "post_open_0905_prediction" if post_bundle is not None else "premarket_prediction"
+            )
+            upsert_training_history(
+                training_path,
+                {
+                    "record_key": f"{now.date().isoformat()}:{training_stage}",
+                    "symbol": symbol,
+                    "trading_date": now.date().isoformat(),
+                    "stage": training_stage,
+                    "feature_bundle": training_bundle,
+                    "labels": labels,
+                    "updated_at": now.isoformat(),
+                },
+                maximum_records=maximum_training_records,
+            )
         base["symbols"].append({
             **item,
             "market_phase": phase["phase"],
@@ -679,6 +783,7 @@ def build_premarket_experiment(
             "premarket_summary": premarket_summary,
             "opening_auction_summary": auction_summary,
             "opening_five_minute_summary": opening_summary,
+            "market_indicators": market_indicators,
             "premarket_prediction": pre_prediction,
             "post_open_0905_prediction": post_prediction,
             "positive_factors": positive,
@@ -702,7 +807,11 @@ def build_premarket_experiment(
     base["data_availability"] = {
         "availability": "available" if any(item["data_availability"]["availability"] == "available" for item in base["symbols"]) else "unavailable",
         "provider": "KIS REST",
-        "history_store": f"{cache_dir}/premarket/<symbol>.jsonl",
+        "history_store": f"{history_dir}/raw/<symbol>.jsonl",
+        "training_store": f"{history_dir}/training/<symbol>.jsonl",
+        "history_storage": "durable premarket-history branch in GitHub Actions; local directory otherwise",
+        "maximum_raw_history_records_per_symbol": maximum_raw_records,
+        "maximum_training_records_per_symbol": maximum_training_records,
         "same_time_baseline_sessions": baseline_period,
         "minimum_required_baseline_samples": minimum_baseline_samples,
     }
