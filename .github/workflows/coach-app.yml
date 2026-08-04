@@ -3,13 +3,13 @@ name: KOSPI Shadow Coach App
 on:
   workflow_dispatch:
   schedule:
-    - cron: "45 7 * * 1-5"
+    - cron: "30 7 * * 1-5"
       timezone: "Asia/Seoul"
-    - cron: "10 8 * * 1-5"
+    - cron: "0 8 * * 1-5"
       timezone: "Asia/Seoul"
-    - cron: "47 8 * * 1-5"
+    - cron: "50 8 * * 1-5"
       timezone: "Asia/Seoul"
-    - cron: "10 9 * * 1-5"
+    - cron: "5 9 * * 1-5"
       timezone: "Asia/Seoul"
     - cron: "0 12 * * 1-5"
       timezone: "Asia/Seoul"

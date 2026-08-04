@@ -1,5 +1,13 @@
 # Decision Coach v5 architecture and operating truth
 
+## KOSPI Market Gate v5.1
+
+`market_gate.py` combines the existing KOSPI open-to-close probability with time-appropriate confirmation data. The gate emits exactly one of `TRADE_OK`, `SELECTIVE`, `WAIT`, `RISK_OFF`, or `UNAVAILABLE`. `TRADE_OK` requires `promotion.signal_enabled=true`, a same-day probability, and positive 09:05 spot, futures, and breadth confirmation. A disabled promotion gate can never emit `TRADE_OK`.
+
+The existing `probability_intraday_up` target is KOSPI close above the same day's open. It is not a probability from the current clock time to the close. Until a separate remaining-session model is trained and validated, `current_to_close_up_probability` remains `null/unavailable`.
+
+Market breadth uses KIS advancer and decliner counts. Large-cap concentration is only an explicitly labeled breadth/index-divergence proxy because direct constituent-weight contribution data is not connected. Gate snapshots are written to `history/kospi/live_prediction_ledger.jsonl` in the same durable history branch used by the decision coach.
+
 ## Existing architecture retained
 
 The daily KOSPI index path remains the only trained prediction path. It builds leakage-controlled daily features from KRX/KIS provisional KOSPI history, Yahoo factors and FRED series, compares Logistic Regression and HistGradientBoosting candidates, and shrinks the selected probability toward the training prior using inner time-series validation. The original promotion gate and probability explanation remain unchanged.
@@ -12,11 +20,11 @@ The stock path remains separate. `premarket_data.py` collects configured stocks,
 
 | Phase | KST interval | Primary decision | Data checkpoint | Coach/Netlify publication |
 |---|---|---|---|---|
-| `overnight_brief` | before 08:00 | market environment and first watch | cached global factors, RSS/FRED | 07:45 |
-| `nxt_premarket` | 08:00–08:50 | observation ranking | Collector 08:12/22/32/42 | 08:10 and 08:47 builds |
-| `opening_auction` | 08:50–09:00 | maintained/strengthened/weakened/excluded | Collector 08:50/55 | next 09:10 build |
-| `opening_confirmation` | 09:00–09:05 | collecting, no entry state | Collector 09:00/05 | next 09:10 build |
-| `entry_decision` | 09:05–09:30 | conditions and invalidation | complete first five minutes | 09:10 |
+| `overnight_brief` | before 08:00 | market environment and first watch | cached global factors, RSS/FRED | 07:30 |
+| `nxt_premarket` | 08:00–08:50 | observation ranking | Coach 08:00; Collector 08:12/22/32/42 | 08:00 |
+| `opening_auction` | 08:50–09:00 | maintained/strengthened/weakened/excluded | Collector/Coach 08:50; Collector 08:55 | 08:50 |
+| `opening_confirmation` | 09:00–09:05 | collecting, no entry state | Collector 09:00/05 | 09:05 |
+| `entry_decision` | 09:05–09:30 | conditions and invalidation | complete first five minutes | 09:05 |
 | `intraday_management` | 09:30–15:30 | thesis/risk review | 09:30, 12:00, 15:20 | 12:00, 15:20 |
 | `closing_review` | 15:30–15:40 | separate premarket/09:05 labels | KRX close | 15:35 |
 | `nxt_aftermarket` | 15:40–20:05 | KRX-close gap and liquidity | Collector 15:42/17:00/19:00/20:00 | 15:45, 18:00, 20:05 |

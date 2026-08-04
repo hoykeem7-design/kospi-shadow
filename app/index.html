@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="실데이터와 검증 상태를 구분하는 KOSPI 시간대별 투자 의사결정 코치 v5">
-  <title>KOSPI Shadow Decision Coach v5</title>
+  <meta name="description" content="KOSPI Market Gate와 실데이터 검증 상태를 구분하는 시간대별 투자 의사결정 코치 v5.1">
+  <title>KOSPI Shadow Decision Coach v5.1</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <p class="eyebrow">KOSPI SHADOW</p>
-      <h1>Decision Coach v5</h1>
+      <h1>Decision Coach v5.1</h1>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
@@ -24,15 +24,40 @@
   </header>
 
   <nav class="section-nav" aria-label="앱 메뉴">
+    <a href="#kospi-market-gate">KOSPI Gate</a>
     <a href="#decision-summary">지금 판단</a>
     <a href="#decision-cards">종목 후보</a>
     <a href="#news-section">기사·공시</a>
     <a href="#post-market">마감·애프터</a>
-    <a href="#data-lab">Data Lab</a>
+    <a href="#kospi-model-lab">Model Lab</a>
+    <a href="#data-lab">종목 Data Lab</a>
     <a href="#operations">수집 상태</a>
   </nav>
 
   <main id="app" class="container" aria-live="polite">
+    <section id="kospi-market-gate" class="market-gate card">
+      <div class="market-gate-head">
+        <div>
+          <p class="eyebrow">KOSPI MARKET GATE</p>
+          <h2>오늘 KOSPI 매매 판단</h2>
+        </div>
+        <span id="marketGateStatus" class="gate-status gate-unavailable">UNAVAILABLE</span>
+      </div>
+      <p id="marketGateSummary" class="market-gate-summary">오늘 데이터와 모델 승격 상태를 확인하고 있습니다.</p>
+      <div class="gate-metric-grid">
+        <div><span>당일 종가 상승 확률</span><strong id="sessionCloseProbability">--</strong><small>당일 시가→종가</small></div>
+        <div><span>현재→종가 상승 확률</span><strong id="remainingSessionProbability">--</strong><small id="remainingSessionReason">별도 모델 확인 중</small></div>
+        <div><span>시장 폭</span><strong id="marketBreadth">--</strong><small id="marketBreadthDetail">상승·하락 종목 수</small></div>
+        <div><span>대형주 편중</span><strong id="largeCapConcentration">--</strong><small>시장 폭–지수 괴리 추정</small></div>
+      </div>
+      <div id="marketGateCheckpoints" class="gate-checkpoints"></div>
+      <div class="gate-action-row">
+        <div><span class="muted">지금 행동</span><strong id="marketGateAction">매매 보류</strong></div>
+        <div id="marketGateAbstention" class="abstention active"><strong>매매 보류</strong><span id="marketGateReason">필수 조건 확인 중</span></div>
+      </div>
+      <p class="explanation-note">TRADE_OK는 모델의 signal_enabled=true와 09:05 현물·선물·시장 폭 확인이 모두 통과할 때만 가능합니다.</p>
+    </section>
+
     <section class="hero card">
       <div class="session-row">
         <span id="sessionBadge" class="badge">불러오는 중</span>
@@ -178,6 +203,15 @@
         <section class="card post-card"><h3>NXT 애프터마켓</h3><div id="aftermarketReview"></div></section>
         <section class="card post-card"><h3>20:05 다음날 관찰</h3><div id="nextDayWatch"></div></section>
       </div>
+    </section>
+
+    <section id="kospi-model-lab" class="section-block card">
+      <div class="section-title"><h2>KOSPI Model Lab</h2><span id="kospiModelStatus" class="badge">검증 상태 확인 중</span></div>
+      <div id="kospiModelMetrics" class="model-lab kospi-model-metrics"></div>
+      <p id="kospiModelScope" class="explanation-note"></p>
+      <h3 class="subsection-title">라이브 예측 원장</h3>
+      <div class="table-wrap"><table class="ledger-table"><thead><tr><th>생성 시각</th><th>체크포인트</th><th>Gate</th><th>당일 종가↑</th><th>현재→종가↑</th><th>시장 폭</th><th>편중 위험</th><th>보류</th></tr></thead><tbody id="kospiPredictionLedger"></tbody></table></div>
+      <p id="kospiLedgerStatus" class="explanation-note"></p>
     </section>
 
     <section id="data-lab" class="section-block card">

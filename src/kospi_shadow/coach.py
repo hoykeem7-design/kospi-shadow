@@ -766,6 +766,15 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         "kospi200_futures": futures,
         "factors": factors,
     }
+    validation_payload = {
+        "roc_auc": metrics.get("classification", {}).get("roc_auc"),
+        "brier": metrics.get("classification", {}).get("brier"),
+        "baseline_brier": metrics.get("classification", {}).get("baseline_brier"),
+        "brier_improvement": metrics.get("classification", {}).get("brier_improvement"),
+        "oos_n": metrics.get("classification", {}).get("n"),
+        "strategy_sharpe": metrics.get("strategy_proxy", {}).get("model", {}).get("annualized_sharpe"),
+        "max_drawdown": metrics.get("strategy_proxy", {}).get("model", {}).get("max_drawdown"),
+    }
     decision_coach = build_decision_coach(
         settings_raw=settings.raw,
         project_root=project_root,
@@ -775,11 +784,14 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         events=events,
         market=market_payload,
         index_signal_enabled=bool(promotion.get("signal_enabled")),
+        index_prediction=prediction,
+        promotion=promotion,
+        validation=validation_payload,
     )
     decision_coach["official_disclosure"] = disclosure_status
     dashboard = {
-        "schema_version": 4,
-        "app_version": "5.0.0",
+        "schema_version": 5,
+        "app_version": "5.1.0",
         "build_sha": os.getenv("GITHUB_SHA") or None,
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {
@@ -791,15 +803,7 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         },
         "prediction": prediction,
         "promotion": promotion,
-        "validation": {
-            "roc_auc": metrics.get("classification", {}).get("roc_auc"),
-            "brier": metrics.get("classification", {}).get("brier"),
-            "baseline_brier": metrics.get("classification", {}).get("baseline_brier"),
-            "brier_improvement": metrics.get("classification", {}).get("brier_improvement"),
-            "oos_n": metrics.get("classification", {}).get("n"),
-            "strategy_sharpe": metrics.get("strategy_proxy", {}).get("model", {}).get("annualized_sharpe"),
-            "max_drawdown": metrics.get("strategy_proxy", {}).get("model", {}).get("max_drawdown"),
-        },
+        "validation": validation_payload,
         "data_quality": {
             "target_provider": manifest.get("target_provider"),
             "target_official": manifest.get("target_official"),
@@ -842,6 +846,9 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         "coach_action": coaching["action"],
         "coach_headline": coaching["headline"],
         "decision_phase": decision_coach["phase"]["phase"],
+        "kospi_gate_status": decision_coach["kospi_market_gate"]["status"],
+        "kospi_gate_checkpoint": decision_coach["kospi_market_gate"]["checkpoint"]["at"],
+        "kospi_gate_abstained": decision_coach["kospi_market_gate"]["abstention"]["active"],
         "target_official": manifest.get("target_official"),
     })
     (data_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")

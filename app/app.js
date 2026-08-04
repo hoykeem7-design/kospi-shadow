@@ -5,10 +5,9 @@ const clsFor = (value) => value == null || Math.abs(value) < 1e-12 ? "neutral" :
 const safeText = (value, fallback="--") => value == null || value === "" ? fallback : String(value);
 const escapeHtml = (value) => safeText(value, "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
 const safeUrl = (value) => { try { const url = new URL(String(value)); return ["http:","https:"].includes(url.protocol) ? url.href : "#"; } catch { return "#"; } };
-// These are actual Coach workflow deployment times. Collector-only snapshots
-// are not advertised as app updates; the completed 09:05 bundle is published
-// by the 09:10 Coach deployment.
-const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","09:10","12:00","15:20","15:35","15:45","18:00","20:05"];
+// These are actual Coach workflow deployment times. The four Market Gate
+// checkpoints are published at 07:30, 08:00, 08:50 and 09:05 KST.
+const AUTO_UPDATE_TIMES = ["07:30","08:00","08:50","09:05","12:00","15:20","15:35","15:45","18:00","20:05"];
 
 let deferredPrompt;
 let currentDashboard = null;
@@ -69,7 +68,7 @@ function nextAutoUpdate(now=new Date()) {
       }
     }
   }
-  return "다음 영업일 07:45 예정";
+  return "다음 영업일 07:30 예정";
 }
 
 function showToast(message, ok=false) {
@@ -275,8 +274,66 @@ function renderDecisionCard(card) {
       <section><h4>언제 진입을 검토하는가</h4><p class="condition-window">${escapeHtml(card?.entry_window)}</p>${conditionList(card?.entry_trigger_conditions)}</section>
       <section><h4>언제 축소·청산을 검토하는가</h4>${conditionList([...(card?.invalidation_conditions||[]), ...(card?.reduce_conditions||[]), ...(card?.exit_conditions||[])])}</section>
     </div>
-    <div class="decision-foot"><span>상태 변화: ${escapeHtml(safeText(card?.state_update?.change_reason,"첫 스냅샷"))}</span><span>동시호가: ${escapeHtml(card?.auction_transition?.label || "미수신")}</span><span>다음 확인: ${escapeHtml(safeText(card?.next_review_at,"미정"))}</span><span class="experimental-label">실험적 신호</span></div>
+    <div class="decision-foot"><span>KOSPI Gate: ${escapeHtml(safeText(card?.kospi_gate_status,"UNAVAILABLE"))}</span><span>상태 변화: ${escapeHtml(safeText(card?.state_update?.change_reason,"첫 스냅샷"))}</span><span>동시호가: ${escapeHtml(card?.auction_transition?.label || "미수신")}</span><span>다음 확인: ${escapeHtml(safeText(card?.next_review_at,"미정"))}</span><span class="experimental-label">실험적 신호</span></div>
   </article>`;
+}
+
+function renderKospiMarketGate(data) {
+  const coach = data?.decision_coach_v5 || {};
+  const gate = coach?.kospi_market_gate || {};
+  const status = safeText(gate.status, "UNAVAILABLE");
+  const statusNode = $("marketGateStatus");
+  statusNode.textContent = `${status} · ${safeText(gate.status_label, "판단 불가")}`;
+  statusNode.className = `gate-status gate-${status.toLowerCase()}`;
+  const reasons = gate?.abstention?.reasons || [];
+  $("marketGateSummary").textContent = reasons[0] || "필수 모델·시장 데이터를 확인하지 못했습니다.";
+
+  const sessionProbability = gate?.session_close_up_probability || {};
+  $("sessionCloseProbability").textContent = sessionProbability.availability === "available" ? fmtPct(sessionProbability.probability, 1) : "산출 불가";
+  const remainingProbability = gate?.current_to_close_up_probability || {};
+  $("remainingSessionProbability").textContent = remainingProbability.availability === "available" ? fmtPct(remainingProbability.probability, 1) : "산출 불가";
+  $("remainingSessionReason").textContent = remainingProbability.availability === "available" ? "현재 시점 기준" : "별도 잔여장 모델 미학습";
+
+  const breadth = gate?.market_breadth || {};
+  $("marketBreadth").textContent = breadth.availability === "available" ? `${fmtPct(breadth.advancer_ratio, 0)} · ${safeText(breadth.label)}` : "데이터 미수신";
+  $("marketBreadthDetail").textContent = breadth.availability === "available" ? `상승 ${fmtNum(breadth.advancers,0)} · 하락 ${fmtNum(breadth.decliners,0)}` : "상승·하락 종목 수 미수신";
+  const concentration = breadth?.large_cap_concentration || {};
+  $("largeCapConcentration").textContent = concentration.availability === "inferred" ? (concentration.risk ? "편중 위험" : "확산 확인") : "판단 보류";
+
+  const checkpoints = gate?.checkpoints || [];
+  $("marketGateCheckpoints").innerHTML = checkpoints.length ? checkpoints.map(item => `<div class="gate-checkpoint ${escapeHtml(item.status)}"><strong>${escapeHtml(item.at)}</strong><span>${escapeHtml(item.purpose)}</span></div>`).join("") : `<div class="empty-state">체크포인트 정보가 없습니다.</div>`;
+  $("marketGateAction").textContent = safeText(gate.action, "매매 보류");
+  const abstention = $("marketGateAbstention");
+  abstention.className = `abstention${gate?.abstention?.active ? " active" : ""}`;
+  abstention.querySelector("strong").textContent = safeText(gate?.abstention?.label, "매매 보류");
+  $("marketGateReason").textContent = reasons.join(" · ") || "조건부 검토";
+
+  const lab = coach?.kospi_model_lab || {};
+  $("kospiModelStatus").textContent = lab.signal_enabled ? "signal_enabled=true" : "signal_enabled=false";
+  $("kospiModelStatus").className = `badge ${lab.signal_enabled ? "up" : "warning-badge"}`;
+  const validation = lab.validation || {};
+  const failedChecks = lab.failed_checks || [];
+  const metrics = [
+    ["목표", safeText(lab.target_definition, "KOSPI 종가 > 당일 시가")],
+    ["승격 상태", safeText(lab.promotion_status, "미확인")],
+    ["검증 표본", `${fmtNum(validation.oos_n,0)}개`],
+    ["ROC-AUC", fmtNum(validation.roc_auc,4)],
+    ["Brier 개선", fmtNum(validation.brier_improvement,6)],
+    ["비용 반영 Sharpe", fmtNum(validation.strategy_sharpe,3)],
+    ["실패 기준", failedChecks.length ? failedChecks.join(", ") : "없음"],
+    ["현재→종가 모델", lab?.remaining_session_model?.availability === "available" ? "사용 가능" : "미학습·미검증"]
+  ];
+  $("kospiModelMetrics").innerHTML = metrics.map(([label,value]) => `<div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`).join("");
+  $("kospiModelScope").textContent = safeText(lab.probability_scope, "당일 시가→종가 확률과 현재→종가 확률을 구분합니다.");
+
+  const ledger = coach?.live_prediction_ledger || {};
+  const records = ledger.records || [];
+  $("kospiPredictionLedger").innerHTML = records.length ? records.map(item => {
+    const generated = item.generated_at ? new Date(item.generated_at).toLocaleString("ko-KR", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Seoul"}) : "--";
+    const concentrationLabel = item.large_cap_concentration_risk == null ? "--" : (item.large_cap_concentration_risk ? "위험" : "아님");
+    return `<tr><td>${escapeHtml(generated)}</td><td>${escapeHtml(safeText(item.checkpoint))}</td><td>${escapeHtml(safeText(item.gate_status))}</td><td>${item.session_close_up_probability == null ? "--" : fmtPct(item.session_close_up_probability,1)}</td><td>${item.current_to_close_up_probability == null ? "--" : fmtPct(item.current_to_close_up_probability,1)}</td><td>${item.advancer_ratio == null ? "--" : fmtPct(item.advancer_ratio,0)}</td><td>${escapeHtml(concentrationLabel)}</td><td>${item.abstained ? "보류" : "조건부"}</td></tr>`;
+  }).join("") : `<tr><td colspan="8">아직 저장된 라이브 예측 원장이 없습니다.</td></tr>`;
+  $("kospiLedgerStatus").textContent = `원장 ${fmtNum(ledger.record_count,0)}건 · 종가 결과 라벨은 공식 종가 수신 후 별도 평가`;
 }
 
 function renderDecisionCoach(data) {
@@ -359,6 +416,7 @@ function render(data) {
   $("nextCheckpoint").textContent = `${data.coaching.next_checkpoint_at} ${data.coaching.next_checkpoint_label}`;
   renderProbabilityExplanation(data);
   renderPremarketExperiment(data);
+  renderKospiMarketGate(data);
   renderDecisionCoach(data);
   $("dataSource").textContent = `${safeText(data.data_quality.latest_source)} · ${safeText(data.data_quality.target_date_max)}`;
   $("briefingList").innerHTML = (data.briefing || []).length ? (data.briefing || []).map(item => `<div class="briefing-item"><strong><span class="briefing-mark ${item.tone}"></span>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.text)}</p></div>`).join("") : `<p class="empty">핵심 요약을 생성하지 못했습니다.</p>`;

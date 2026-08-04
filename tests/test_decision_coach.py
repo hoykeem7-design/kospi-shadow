@@ -372,6 +372,43 @@ def test_actual_aftermarket_data_can_create_next_day_watch_but_not_entry(tmp_pat
     assert result["entry_candidates"] == []
 
 
+def test_stock_signal_is_subordinate_to_kospi_market_gate(tmp_path: Path):
+    result = build_decision_coach(
+        settings_raw={"premarket": {"history_dir": "history"}, "decision_coach": {}},
+        project_root=tmp_path,
+        now=datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL),
+        premarket_experiment={
+            "generated_at": "2026-08-04T09:05:00+09:00",
+            "symbols": [_symbol()],
+            "production_truth": {
+                "stock_model_trained": True,
+                "stock_signal_enabled": True,
+            },
+        },
+        news=[],
+        events=[],
+        market={
+            "kospi": {"change_rate": 0.01, "advancers": 600, "decliners": 300},
+            "kospi200_futures": {"change_rate": 0.01},
+            "factors": [],
+        },
+        index_signal_enabled=False,
+        index_prediction={
+            "candidate_target_date": "2026-08-04",
+            "probability_intraday_up": 0.70,
+            "probability_threshold": 0.57,
+        },
+        promotion={"signal_enabled": False, "status": "RESTRICTED_SHADOW", "checks": {}},
+        validation={},
+        persist_history=False,
+    )
+    assert result["kospi_market_gate"]["status"] == "WAIT"
+    assert result["signal_gate"]["stock_signal_depends_on_kospi_gate"] is True
+    assert result["signal_gate"]["stock_signal_enabled"] is False
+    assert result["decision_cards"][0]["blocked_by_kospi_gate"] is True
+    assert result["entry_candidates"] == []
+
+
 def test_pwa_contains_no_direct_recommendation_and_has_data_lab():
     root = Path(__file__).resolve().parents[1]
     app_js = (root / "app" / "app.js").read_text(encoding="utf-8")

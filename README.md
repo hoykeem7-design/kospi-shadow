@@ -1,6 +1,16 @@
-# KOSPI Shadow Decision Coach v5
+# KOSPI Shadow Decision Coach v5.1
 
 기존 누수 통제형 KOSPI 예측 파이프라인에 **시간대별 시장 코칭 PWA**를 결합한 개인 연구용 앱입니다.
+
+## v5.1 KOSPI Market Gate
+
+- 앱 최상단의 **오늘 KOSPI 매매 판단**에서 `TRADE_OK`, `SELECTIVE`, `WAIT`, `RISK_OFF`, `UNAVAILABLE`를 구분합니다.
+- 07:30, 08:00, 08:50, 09:05 체크포인트를 실제 Coach 배포 시각과 맞춥니다.
+- 기존 KOSPI `intraday_up` 모델 확률은 **당일 시가→종가 상승 확률**로만 표시합니다. 별도 잔여장 모델이 없어 **현재 시점→종가 상승 확률**은 `null/unavailable`이며 기존 확률로 대체하지 않습니다.
+- KIS KOSPI 상승·하락 종목 수로 시장 폭을 표시합니다. 대형주 편중은 구성종목 가중치 직접 측정값이 아니라 지수 등락과 시장 폭 괴리의 추정치로 명시합니다.
+- `signal_enabled=false`이면 `TRADE_OK`를 절대 만들지 않으며 매매 보류(abstention)를 활성화합니다.
+- 종목 신호는 KOSPI Market Gate가 `TRADE_OK` 또는 `SELECTIVE`이고 종목 모델 자체도 학습·승격됐을 때만 열립니다. 현재 종목 모델은 미학습 상태라 계속 fail-closed입니다.
+- KOSPI Model Lab은 승격 기준과 검증 지표를 표시하고, 라이브 예측 원장은 durable `premarket-history` 브랜치의 `history/kospi/live_prediction_ledger.jsonl`에 체크포인트별 스냅샷을 보존합니다.
 
 ## v5 시간대별 투자 의사결정 코치
 
@@ -22,7 +32,7 @@
 - KIS REST의 `NX` 시장 현재가·호가·예상체결·당일 분봉을 설정된 종목에만 수집합니다. 기본 종목 목록은 비어 있으며 저장소 변수 `PREMARKET_SYMBOLS` 또는 `premarket.symbols`로 명시해야 합니다.
 - 장전 예측과 09:05 업데이트는 서로 다른 객체로 보존합니다. 09:05 전에는 첫 5분 피처를 사용하거나 업데이트 결과를 만들지 않습니다.
 - 종목별 원시 스냅샷과 날짜·단계별 학습 레코드는 일반 시장 캐시와 분리합니다. Actions에서는 전용 `premarket-history` 브랜치에 직렬화해 보존하며, 최근 20거래일의 현재 시각 이하 가장 가까운 관측이 채워지기 전에는 상대거래량·상대거래대금을 계산하지 않습니다.
-- 09:05 수집 결과는 Collector가 곧바로 배포하지 않으며, 현재 운영 스케줄상 09:10 Coach 빌드에서 처음 PWA에 반영됩니다.
+- 09:05 수집 결과는 같은 시각 Coach 빌드에서 Market Gate와 함께 PWA에 반영됩니다. Collector와 Coach는 동일한 직렬화 그룹을 사용합니다.
 - 종목 학습·보정 데이터가 아직 없으므로 운영 응답의 세 확률은 `null`입니다. 임의 휴리스틱 확률은 사용하지 않습니다.
 - 자세한 구조, 라벨, 공급자 경로와 데이터 가용성은 [TWO_STAGE_PREMARKET.md](TWO_STAGE_PREMARKET.md)에 정리했습니다.
 
@@ -35,7 +45,7 @@
 
 ## 앱 기능
 
-- 07:45 장전, 08:10 NXT 확인, 08:47 선물, 09:10 본장, 12:00, 15:20, 20:05 자동 업데이트
+- 07:30 장전, 08:00 NXT 확인, 08:50 선물·동시호가, 09:05 본장 첫 5분, 12:00, 15:20, 20:05 자동 업데이트
 - KOSPI 확률, KIS KOSPI/KOSPI200 선물, 미국 지수·VIX·환율·금리, 뉴스·발표 캘린더 통합
 - 모델 승격 기준이 닫혀 있으면 매수 코칭을 자동 차단
 - PWA 설치 지원. `ENABLE_GITHUB_PAGES=true` 저장소 변수를 설정하면 Pages 자동 배포

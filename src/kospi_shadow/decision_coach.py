@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+from .market_gate import build_kospi_market_gate, update_live_prediction_ledger
+
 
 SEOUL = ZoneInfo("Asia/Seoul")
 ACTION_LABELS = {
@@ -856,6 +858,9 @@ def build_decision_coach(
     events: list[dict[str, Any]],
     market: dict[str, Any],
     index_signal_enabled: bool,
+    index_prediction: dict[str, Any] | None = None,
+    promotion: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
     persist_history: bool = True,
 ) -> dict[str, Any]:
     phase = resolve_decision_phase(now)
@@ -891,6 +896,23 @@ def build_decision_coach(
     )[: int(cfg.get("maximum_news_items", 20))]
     cutoff_news = news_available_at(normalized_news, _phase_cutoff(now, phase["phase"]))
     symbols = [sanitize_symbol_for_phase(item, now) for item in premarket_experiment.get("symbols") or []]
+    effective_promotion = deepcopy(promotion or {})
+    effective_promotion.setdefault("signal_enabled", bool(index_signal_enabled))
+    market_gate = build_kospi_market_gate(
+        now=now,
+        prediction=deepcopy(index_prediction or {}),
+        promotion=effective_promotion,
+        validation=deepcopy(validation or {}),
+        market=market,
+        premarket_experiment=premarket_experiment,
+        config=cfg.get("kospi_market_gate") or {},
+    )
+    production_truth = premarket_experiment.get("production_truth") or {}
+    stock_signal_requested = bool(
+        production_truth.get("stock_model_trained")
+        and production_truth.get("stock_signal_enabled")
+    )
+    stock_signal_enabled = bool(stock_signal_requested and market_gate["stock_entries_allowed"])
     ranked = []
     completeness_weight = float(cfg.get("ranking_completeness_weight", 0.7))
     directional_weight = float(cfg.get("ranking_directional_weight", 0.3))
@@ -906,20 +928,37 @@ def build_decision_coach(
     cards = [
         build_decision_card(
             row[2], rank=index + 1, phase=phase,
-            signal_enabled=False,  # stock-level gate is independent of the KOSPI index gate
-            model_trained=bool((premarket_experiment.get("production_truth") or {}).get("stock_model_trained")),
+            signal_enabled=stock_signal_enabled,
+            model_trained=bool(production_truth.get("stock_model_trained")),
             news=cutoff_news,
             completeness_weight=completeness_weight,
             directional_weight=directional_weight,
         )
         for index, row in enumerate(ranked[:maximum_watch])
     ]
+    for card in cards:
+        card["kospi_gate_status"] = market_gate["status"]
+        card["kospi_gate_label"] = market_gate["status_label"]
+        card["blocked_by_kospi_gate"] = not market_gate["stock_entries_allowed"]
+        card["stock_signal_requested"] = stock_signal_requested
+        if card["blocked_by_kospi_gate"]:
+            card["risk_factors"] = [
+                f"KOSPI Market Gate: {market_gate['status_label']}",
+                *card["risk_factors"],
+            ]
     entry_max = int(cfg.get("maximum_entry_candidates", 3))
     entry_candidates = [card for card in cards if card["action_state"] == "ENTRY_CANDIDATE"][:entry_max]
     apply_previous_states(settings_raw, project_root, cards)
     shadow = build_shadow_snapshots(cards, phase, settings_raw)
     if persist_history:
         persist_shadow_snapshots(settings_raw, project_root, shadow)
+    live_ledger = update_live_prediction_ledger(
+        settings_raw=settings_raw,
+        project_root=project_root,
+        gate=market_gate,
+        persist=persist_history,
+        maximum_records=int((cfg.get("kospi_market_gate") or {}).get("maximum_ledger_records", 5000)),
+    )
     data_lab = build_data_lab(settings_raw, project_root, symbols)
     after_close_news = [item for item in normalized_news if item.get("session_bucket") in {"after_close", "after_market"}]
     symbol_lookup = {str(item.get("symbol")): item for item in symbols}
@@ -985,6 +1024,9 @@ def build_decision_coach(
         "schema_version": 1,
         "feature_name": "time_based_decision_coach_v5",
         "phase": phase,
+        "kospi_market_gate": market_gate,
+        "kospi_model_lab": market_gate["model_lab"],
+        "live_prediction_ledger": live_ledger,
         "market_environment": _market_environment(market, normalized_news, events),
         "official_disclosure": {
             "availability": "available" if any(item.get("official_disclosure") for item in normalized_news) else "unavailable",
@@ -1016,7 +1058,7 @@ def build_decision_coach(
             "trade_creation_rule": "entry conditions must be met; untrained gate creates no hypothetical trade",
         },
         "operations": {
-            "app_version": "5.0.0",
+            "app_version": "5.1.0",
             "build_sha": os.getenv("GITHUB_SHA") or None,
             "last_netlify_deploy": None,
             "last_data_collection": premarket_experiment.get("generated_at"),
@@ -1027,9 +1069,13 @@ def build_decision_coach(
             "refresh_behavior": "static_deployment_check_only",
         },
         "signal_gate": {
-            "stock_signal_enabled": False,
-            "index_signal_enabled": bool(index_signal_enabled),
-            "stock_model_trained": False,
+            "stock_signal_enabled": stock_signal_enabled,
+            "stock_signal_requested": stock_signal_requested,
+            "stock_signal_depends_on_kospi_gate": True,
+            "kospi_market_gate_status": market_gate["status"],
+            "kospi_stock_entries_allowed": market_gate["stock_entries_allowed"],
+            "index_signal_enabled": bool(effective_promotion.get("signal_enabled")),
+            "stock_model_trained": bool(production_truth.get("stock_model_trained")),
             "probability_available": False,
             "probability": None,
             "experimental": True,

@@ -1,7 +1,7 @@
 {
-  "name": "KOSPI Shadow Decision Coach v5",
+  "name": "KOSPI Shadow Decision Coach v5.1",
   "short_name": "Decision Coach",
-  "description": "실데이터와 검증 상태를 구분하는 시간대별 투자 의사결정 코치",
+  "description": "KOSPI Market Gate와 실데이터 검증 상태를 구분하는 시간대별 투자 의사결정 코치",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#070b14",

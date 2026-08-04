@@ -652,8 +652,9 @@ def test_workflows_serialize_history_and_pwa_advertises_actual_deploy_times():
     assert "premarket-history" in collector and "premarket-history" in coach
     assert "actions/cache" not in collector
     update_line = next(line for line in app.splitlines() if line.startswith("const AUTO_UPDATE_TIMES"))
-    assert '"09:10"' in update_line
-    for collector_only in ('"08:50"', '"08:55"', '"09:00"', '"09:05"'):
+    for market_gate_checkpoint in ('"07:30"', '"08:00"', '"08:50"', '"09:05"'):
+        assert market_gate_checkpoint in update_line
+    for collector_only in ('"08:55"', '"09:00"'):
         assert collector_only not in update_line
 
 

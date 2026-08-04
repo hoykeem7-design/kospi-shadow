@@ -37,6 +37,33 @@ a { color: inherit; }
 .section-nav a { flex:none; text-decoration:none; color:var(--muted); font-size:12px; padding:7px 10px; border:1px solid var(--line); border-radius:999px; }
 .container { width: min(1120px, 100%); margin: 0 auto; padding: 18px 16px calc(42px + env(safe-area-inset-bottom)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); backdrop-filter: blur(12px); }
+.market-gate { padding:22px; border-color:rgba(118,168,255,.24); background:linear-gradient(145deg,rgba(34,48,82,.94),rgba(13,20,36,.92)); }
+.market-gate-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.market-gate-head h2 { margin:2px 0 0; font-size:clamp(25px,4vw,36px); letter-spacing:-1px; }
+.gate-status { flex:none; display:inline-flex; align-items:center; min-height:38px; padding:8px 13px; border-radius:11px; font-size:13px; font-weight:900; letter-spacing:.35px; }
+.gate-trade_ok { color:#d8fff0; background:rgba(66,211,146,.2); border:1px solid rgba(66,211,146,.38); }
+.gate-selective { color:#dce9ff; background:rgba(118,168,255,.2); border:1px solid rgba(118,168,255,.38); }
+.gate-wait { color:#ffe7b0; background:rgba(245,195,91,.15); border:1px solid rgba(245,195,91,.3); }
+.gate-risk_off { color:#ffdce1; background:rgba(255,107,122,.18); border:1px solid rgba(255,107,122,.36); }
+.gate-unavailable { color:#c5ccda; background:rgba(154,166,189,.12); border:1px solid rgba(154,166,189,.25); }
+.market-gate-summary { margin:15px 0 0; color:#dce6f8; line-height:1.55; }
+.gate-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:16px; }
+.gate-metric-grid > div { padding:14px; border:1px solid var(--line); border-radius:15px; background:rgba(255,255,255,.035); }
+.gate-metric-grid span,.gate-metric-grid small { display:block; color:var(--muted); font-size:11px; }
+.gate-metric-grid strong { display:block; margin:7px 0 5px; font-size:19px; }
+.gate-checkpoints { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:13px; }
+.gate-checkpoint { padding:10px 11px; border:1px solid var(--line); border-radius:13px; background:rgba(255,255,255,.025); }
+.gate-checkpoint strong,.gate-checkpoint span { display:block; }
+.gate-checkpoint span { margin-top:4px; color:var(--muted); font-size:10px; line-height:1.35; }
+.gate-checkpoint.current { border-color:rgba(118,168,255,.55); background:rgba(118,168,255,.1); }
+.gate-checkpoint.done { opacity:.65; }
+.gate-action-row { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; margin-top:13px; }
+.gate-action-row > div { padding:13px 14px; border-radius:14px; background:rgba(255,255,255,.035); }
+.gate-action-row span,.gate-action-row strong { display:block; }
+.gate-action-row strong { margin-top:4px; }
+.abstention { border:1px solid rgba(66,211,146,.24); }
+.abstention.active { border-color:rgba(245,195,91,.32); background:rgba(245,195,91,.07); }
+.abstention span { margin-top:5px; color:var(--muted); font-size:11px; line-height:1.4; }
 .hero { padding: 22px; overflow: hidden; }
 .session-row,.section-title,.coach-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .hero h2 { font-size: clamp(24px, 5vw, 38px); margin: 16px 0 6px; letter-spacing: -1px; }
@@ -197,4 +224,9 @@ td small { display:block; color:var(--muted); }
 .model-lab > div { padding:12px; border:1px solid var(--line); border-radius:13px; }
 .model-lab strong,.model-lab span { display:block; }
 .model-lab span { margin-top:5px; color:var(--muted); font-size:11px; }
-@media(max-width:760px){ .question-grid,.decision-columns,.post-market-grid{grid-template-columns:1fr}.header-actions .ghost{font-size:11px;padding:8px}.model-lab{grid-template-columns:1fr}.section-nav{top:70px} }
+.subsection-title { margin:22px 0 0; font-size:15px; }
+.ledger-table { min-width:900px; }
+.kospi-model-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+@media(max-width:900px){ .gate-metric-grid,.gate-checkpoints{grid-template-columns:repeat(2,minmax(0,1fr))}.kospi-model-metrics{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media(max-width:760px){ .question-grid,.decision-columns,.post-market-grid,.gate-action-row{grid-template-columns:1fr}.header-actions .ghost{font-size:11px;padding:8px}.model-lab{grid-template-columns:1fr}.section-nav{top:70px} }
+@media(max-width:520px){ .market-gate-head{display:block}.gate-status{margin-top:13px}.gate-metric-grid,.gate-checkpoints{grid-template-columns:1fr 1fr}.market-gate{padding:18px} }
