@@ -35,31 +35,17 @@ jobs:
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve durable history ref
-        id: history_ref
-        shell: bash
-        run: |
-          if git ls-remote --exit-code --heads origin refs/heads/premarket-history >/dev/null 2>&1; then
-            echo "ref=premarket-history" >> "$GITHUB_OUTPUT"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Check out durable premarket history
+        with:
+          fetch-depth: 0
+      - name: Check out durable history workspace
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.history_ref.outputs.ref }}
+          ref: ${{ github.sha }}
           path: premarket-history-store
-          fetch-depth: 1
-      - name: Initialize durable history branch
-        if: ${{ steps.history_ref.outputs.exists == 'false' }}
+          fetch-depth: 0
+      - name: Prepare durable history branch
         shell: bash
-        run: |
-          git -C premarket-history-store switch --orphan premarket-history
-          git -C premarket-history-store rm -rf .
-          mkdir -p premarket-history-store/history
-          touch premarket-history-store/history/.gitkeep
+        run: bash scripts/prepare_premarket_history.sh premarket-history-store history
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
