@@ -1,4 +1,4 @@
-const STATIC_CACHE = "kospi-shadow-decision-coach-v5-static";
+const STATIC_CACHE = "kospi-shadow-decision-coach-v5-1-static";
 const STATIC_ASSETS = [
   "./",
   "index.html",

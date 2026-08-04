@@ -27,6 +27,12 @@ def test_coach_workflow_covers_post_close_refresh():
     assert 'timezone: "Asia/Seoul"' in text
 
 
+def test_coach_workflow_publishes_market_gate_checkpoints():
+    text = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
+    for cron in ('"30 7 * * 1-5"', '"0 8 * * 1-5"', '"50 8 * * 1-5"', '"5 9 * * 1-5"'):
+        assert f"cron: {cron}" in text
+
+
 def test_aftermarket_collector_and_coach_use_shared_serialization():
     collector = (ROOT / ".github" / "workflows" / "premarket-collector.yml").read_text(encoding="utf-8")
     coach = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
