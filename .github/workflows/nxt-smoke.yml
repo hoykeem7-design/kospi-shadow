@@ -54,6 +54,8 @@ jobs:
               handle.write("## NXT live-data smoke test\n\n")
               handle.write(f"- Configured symbols: {status.get('configured_symbol_count', 0)}\n")
               handle.write(f"- Available symbols: {status.get('available_symbol_count', 0)}\n")
+              handle.write(f"- Smoke target: {status.get('smoke_target', 'unavailable')}\n")
+              handle.write(f"- Smoke-available symbols: {status.get('smoke_available_symbol_count', 0)}\n")
               handle.write(f"- Availability: {status.get('data_availability', 'unavailable')}\n")
           PY
       - name: Upload non-secret smoke status

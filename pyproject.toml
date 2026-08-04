@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kospi-shadow"
-version = "4.3.0"
-description = "Leakage-controlled KOSPI forecast and session-aware coaching PWA with automatic Netlify deployment"
+version = "5.0.0"
+description = "Leakage-controlled KOSPI forecast and time-based decision coaching PWA"
 requires-python = ">=3.11"
 dependencies = [
   "joblib>=1.4,<2",

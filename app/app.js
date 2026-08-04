@@ -8,7 +8,7 @@ const safeUrl = (value) => { try { const url = new URL(String(value)); return ["
 // These are actual Coach workflow deployment times. Collector-only snapshots
 // are not advertised as app updates; the completed 09:05 bundle is published
 // by the 09:10 Coach deployment.
-const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","09:10","12:00","15:20","15:35","20:05"];
+const AUTO_UPDATE_TIMES = ["07:45","08:10","08:47","09:10","12:00","15:20","15:35","15:45","18:00","20:05"];
 
 let deferredPrompt;
 let currentDashboard = null;
@@ -39,17 +39,15 @@ function runtimeSession(date=new Date()) {
   const minute = p.hour * 60 + p.minute;
   const weekday = !["Sat","Sun"].includes(p.weekday);
   if (!weekday) return {label:"주말·휴장 구간", description:"다음 영업일 장전 계획을 준비합니다."};
-  if (minute < 360) return {label:"야간 선물", description:"KOSPI200 야간선물과 미국장을 반영하는 구간입니다."};
-  if (minute < 480) return {label:"장전 준비", description:"전일 국장·미국장·야간선물·뉴스를 합쳐 오늘 계획을 점검합니다."};
-  if (minute < 525) return {label:"NXT 프리마켓", description:"08:00 초기 반응을 보되 선물과 본장 확인 전 추격을 피합니다."};
-  if (minute < 540) return {label:"선물 개장·본장 직전", description:"KOSPI200 선물 방향과 09:00 현물 개장을 교차 확인합니다."};
-  if (minute < 550) return {label:"본장 가격발견", description:"개장 직후 변동성이 커서 첫 10분 확인을 우선합니다."};
-  if (minute < 720) return {label:"오전 본장", description:"프리마켓·선물·현물 방향의 일치 여부를 감시합니다."};
-  if (minute < 920) return {label:"오후 본장", description:"오전 추세 지속과 선물 변화를 재평가합니다."};
-  if (minute < 930) return {label:"마감 직전", description:"신규 추격보다 종가 위험과 익일 보유 여부를 점검합니다."};
-  if (minute < 1080) return {label:"NXT 애프터마켓", description:"정규장 결과를 확인하고 다음 영업일 시나리오를 준비합니다."};
-  if (minute < 1200) return {label:"애프터마켓·야간선물", description:"애프터와 야간선물의 방향 일치를 확인합니다."};
-  return {label:"장 종료 후", description:"오늘 국장과 애프터·야간선물 초기 흐름으로 다음 장을 준비합니다."};
+  if (minute < 480) return {code:"overnight_brief", label:"아침 브리핑", description:"미국 시장·야간 지표·기사 시각을 확인해 첫 관찰 대상을 준비합니다."};
+  if (minute < 530) return {code:"nxt_premarket", label:"NXT 프리마켓", description:"실제 NXT 수신값과 동일 시간대 기준으로 관찰 후보를 좁힙니다."};
+  if (minute < 540) return {code:"opening_auction", label:"동시호가 반영", description:"예상체결가 하나로 단정하지 않고 후보 유지 여부를 재평가합니다."};
+  if (minute < 545) return {code:"opening_confirmation", label:"시초 확인 중", description:"첫 5분이 완성되기 전에는 진입 판단을 확정하지 않습니다."};
+  if (minute < 570) return {code:"entry_decision", label:"진입 조건 확인", description:"장전·동시호가·첫 5분 정보를 함께 보고 조건 충족 여부를 확인합니다."};
+  if (minute < 930) return {code:"intraday_management", label:"장중 관리", description:"진입 논리, 근사 VWAP, 시장·업종, 신규 재료를 체크포인트마다 확인합니다."};
+  if (minute < 940) return {code:"closing_review", label:"정규장 마감 분석", description:"장전 판단과 09:05 판단의 결과를 분리해 확인합니다."};
+  if (minute < 1205) return {code:"nxt_aftermarket", label:"NXT 애프터마켓", description:"KRX 종가 이후 실데이터가 있을 때만 괴리와 유동성을 표시합니다."};
+  return {code:"next_day_watch", label:"다음날 관찰", description:"장 마감 후 실제 기사와 애프터마켓 수신값을 근거로 익일 확인 대상을 정리합니다."};
 }
 
 function seoulDateToInstant(year, month, day, hour, minute) {
@@ -257,6 +255,76 @@ function renderPremarketExperiment(data) {
   renderSelected();
 }
 
+function conditionList(items, empty="확인 조건이 없습니다.") {
+  if (!(items || []).length) return `<p class="empty">${escapeHtml(empty)}</p>`;
+  return `<ul class="condition-list">${items.map(item => {
+    const status = item?.status || "pending";
+    const label = typeof item === "string" ? item : item?.label;
+    return `<li class="condition-${escapeHtml(status)}"><span>${status === "met" ? "✓" : status === "not_met" ? "!" : "·"}</span>${escapeHtml(label)}</li>`;
+  }).join("")}</ul>`;
+}
+
+function renderDecisionCard(card) {
+  const watch = (card?.why_watch || []).map(value => `<li>${escapeHtml(value)}</li>`).join("") || `<li>실데이터 수신 여부 확인</li>`;
+  const risks = (card?.risk_factors || []).map(value => `<li>${escapeHtml(value)}</li>`).join("") || `<li>검증된 종목 확률 모델 없음</li>`;
+  return `<article class="decision-card">
+    <div class="decision-card-head"><div><span class="rank">#${fmtNum(card?.candidate_rank,0)}</span><h3>${escapeHtml(card?.name)} <small>${escapeHtml(card?.symbol)}</small></h3></div><span class="action-state action-${escapeHtml(String(card?.action_state||"WAIT").toLowerCase())}">${escapeHtml(card?.action_label)}</span></div>
+    <div class="decision-meta"><span>관찰 점수 ${card?.observation_score == null ? "산출 불가" : `${fmtNum(card.observation_score,1)}점`}</span><span>완전성 ${fmtPct(card?.data_completeness,0)}</span><span>품질 ${escapeHtml(safeText(card?.data_quality,"불명"))}</span><span>확률 산출 불가</span></div>
+    <div class="decision-columns">
+      <section><h4>왜 주목하는가</h4><ul>${watch}</ul><h4 class="risk-title">위험 요인</h4><ul>${risks}</ul></section>
+      <section><h4>언제 진입을 검토하는가</h4><p class="condition-window">${escapeHtml(card?.entry_window)}</p>${conditionList(card?.entry_trigger_conditions)}</section>
+      <section><h4>언제 축소·청산을 검토하는가</h4>${conditionList([...(card?.invalidation_conditions||[]), ...(card?.reduce_conditions||[]), ...(card?.exit_conditions||[])])}</section>
+    </div>
+    <div class="decision-foot"><span>상태 변화: ${escapeHtml(safeText(card?.state_update?.change_reason,"첫 스냅샷"))}</span><span>동시호가: ${escapeHtml(card?.auction_transition?.label || "미수신")}</span><span>다음 확인: ${escapeHtml(safeText(card?.next_review_at,"미정"))}</span><span class="experimental-label">실험적 신호</span></div>
+  </article>`;
+}
+
+function renderDecisionCoach(data) {
+  const coach = data?.decision_coach_v5;
+  const session = runtimeSession();
+  const phase = coach?.phase || {};
+  $("decisionPhase").textContent = safeText(phase.display, session.label);
+  $("decisionPhaseDescription").textContent = session.description;
+  const cards = coach?.decision_cards || [];
+  const top = cards[0];
+  $("whatToWatch").textContent = top ? `${top.name} (${top.symbol}) · ${top.action_label}` : "설정된 종목 또는 실데이터 없음";
+  $("whenToEnter").textContent = top?.entry_window || "09:05 완성 데이터 확인 전 판단 보류";
+  $("whenToExit").textContent = top?.invalidation_conditions?.[0]?.label || "진입 논리와 구조적 기준 재확인";
+  const checks = coach?.market_environment?.top_checks || [];
+  $("topChecks").innerHTML = checks.length ? checks.map(value => `<span>${escapeHtml(value)}</span>`).join("") : `<span>데이터 부족</span>`;
+  $("decisionCardList").innerHTML = cards.length ? cards.map(renderDecisionCard).join("") : `<div class="empty-state">PREMARKET_SYMBOLS와 실제 수신 데이터가 없어 종목 의사결정 카드를 생성하지 않았습니다.</div>`;
+
+  const closing = coach?.closing_review || {};
+  $("closingReview").innerHTML = closing.availability === "available" ? (closing.symbols || []).map(item => `<div class="mini-watch"><strong>${escapeHtml(item.name)}</strong><span>시가 ${fmtNum(item.actual_open)} · 종가 ${fmtNum(item.close_price)}</span></div>`).join("") : `<p class="empty">마감 라벨 미완성 · ${escapeHtml(safeText(closing.unavailable_reason,"데이터 없음"))}</p>`;
+  const after = coach?.nxt_aftermarket || {};
+  $("aftermarketReview").innerHTML = after.availability === "available" ? (after.symbols || []).map(item => `<div class="mini-watch"><strong>${escapeHtml(item.name)}</strong><span>${fmtNum(item.current_price)} · KRX 대비 ${fmtPct(item.krx_close_return,2)}</span></div>`).join("") : `<p class="empty">데이터 미수신<br><small>${escapeHtml(safeText(after.unavailable_reason))}</small></p>`;
+  const nextDay = coach?.next_day_watchlist || [];
+  $("nextDayWatch").innerHTML = nextDay.length ? nextDay.map(item => `<div class="mini-watch"><strong>#${fmtNum(item.rank,0)} ${escapeHtml(item.name)}</strong><span>${escapeHtml(item.status)}${item.close_gap == null ? "" : ` · ${fmtPct(item.close_gap,2)}`}</span></div>`).join("") : `<p class="empty">실제 장 마감 후 재료 또는 애프터마켓 데이터가 없어 후보를 만들지 않았습니다.</p>`;
+
+  const lab = coach?.data_lab || {};
+  const rows = lab.symbols || [];
+  $("dataLabBody").innerHTML = rows.length ? rows.map(row => `<tr><td>${escapeHtml(row.name)}<small>${escapeHtml(row.symbol)}</small></td><td>${fmtNum(row.collected_trading_days,0)}</td><td>${fmtNum(row.premarket_sample_count,0)}</td><td>${fmtNum(row.opening_auction_sample_count,0)}</td><td>${fmtNum(row.opening_five_minute_sample_count,0)}</td><td>${fmtNum(row.label_0930_count,0)}</td><td>${fmtNum(row.close_label_count,0)}</td><td>${fmtPct(row.data_completeness,0)}</td><td>${fmtNum(row.trading_days_remaining,0)}일</td></tr>`).join("") : `<tr><td colspan="9">수집된 종목 이력이 없습니다.</td></tr>`;
+  const models = lab.models || {};
+  $("modelLab").innerHTML = Object.entries(models).map(([name, metrics]) => `<div><strong>${escapeHtml(name)}</strong><span>${metrics.availability === "available" ? `Brier ${fmtNum(metrics.brier_score,4)}` : "워크포워드 백테스트 미수행 · 지표 없음"}</span></div>`).join("") || `<p class="empty">모델 검증 지표가 없습니다.</p>`;
+
+  const snapshots = coach?.shadow_trading?.snapshots || [];
+  $("shadowRecords").innerHTML = snapshots.length ? snapshots.slice(0,10).map(item => `<div class="list-item"><strong>${escapeHtml(item.symbol)} · ${escapeHtml(item.action_state)}</strong><span class="list-meta"><span>${escapeHtml(item.stage)}</span><span>${item.hypothetical_trade_created ? "가상매매 생성" : "진입 조건 미충족 · 가상매매 없음"}</span><span>${escapeHtml(item.decision_id)}</span></span></div>`).join("") : `<p class="empty">저장된 의사결정 스냅샷이 없습니다.</p>`;
+
+  const operations = coach?.operations || {};
+  $("versionBadge").textContent = `v${safeText(operations.app_version, data?.app_version || "5.0.0")}`;
+  $("operationsMetrics").innerHTML = summaryRows([
+    ["build SHA", safeText(operations.build_sha || data?.build_sha, "로컬/미제공")],
+    ["마지막 Netlify 배포", safeText(operations.last_netlify_deploy, "배포 메타데이터 미연결")],
+    ["마지막 데이터 수집", safeText(operations.last_data_collection, "수집 전")],
+    ["마지막 정상 워크플로", safeText(operations.last_successful_workflow, "상태 API 미연결")],
+    ["다음 체크포인트", `${safeText(operations.next_scheduled_checkpoint?.at,"미정")} ${safeText(operations.next_scheduled_checkpoint?.label,"")}`],
+    ["앱 갱신", "정적 배포 확인만 수행"]
+  ]);
+
+  const disclosure = coach?.official_disclosure || {};
+  $("disclosureAvailability").textContent = disclosure.availability === "available" ? "OpenDART 공식 공시 수신" : `공시 ${missingLabel(disclosure.unavailable_reason,"데이터 제공 불가")}`;
+}
+
 function renderFreshness(data) {
   const generated = new Date(data.generated_at_seoul);
   const ageMinutes = Math.max(0, Math.floor((Date.now() - generated.getTime()) / 60000));
@@ -291,6 +359,7 @@ function render(data) {
   $("nextCheckpoint").textContent = `${data.coaching.next_checkpoint_at} ${data.coaching.next_checkpoint_label}`;
   renderProbabilityExplanation(data);
   renderPremarketExperiment(data);
+  renderDecisionCoach(data);
   $("dataSource").textContent = `${safeText(data.data_quality.latest_source)} · ${safeText(data.data_quality.target_date_max)}`;
   $("briefingList").innerHTML = (data.briefing || []).length ? (data.briefing || []).map(item => `<div class="briefing-item"><strong><span class="briefing-mark ${item.tone}"></span>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.text)}</p></div>`).join("") : `<p class="empty">핵심 요약을 생성하지 못했습니다.</p>`;
 
@@ -298,7 +367,7 @@ function render(data) {
   $("marketGrid").innerHTML = market.filter(Boolean).map(renderMarketCard).join("") || `<p class="empty">시장 데이터가 없습니다.</p>`;
   $("timeline").innerHTML = (data.timeline || []).map(item => `<div class="timeline-item ${item.status}"><span class="timeline-time">${escapeHtml(item.at)}</span><span class="timeline-dot"></span><div class="timeline-copy"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.note)}</span></div></div>`).join("");
 
-  $("newsList").innerHTML = (data.news || []).length ? data.news.map(item => `<a class="list-item" href="${safeUrl(item.link)}" target="_blank" rel="noopener"><strong><span class="impact ${item.impact}"></span>${escapeHtml(item.title)}</strong><span class="list-meta"><span>${escapeHtml(safeText(item.source,"뉴스"))}</span><span>${escapeHtml((item.tags||[]).join(" · "))}</span></span></a>`).join("") : `<p class="empty">수집된 기사가 없습니다.</p>`;
+  $("newsList").innerHTML = (data.news || []).length ? data.news.map(item => `<a class="list-item" href="${safeUrl(item.source_url || item.link)}" target="_blank" rel="noopener"><strong><span class="impact ${escapeHtml(item.material_direction || item.impact || "unknown")}"></span>${escapeHtml(item.title)}</strong><span class="list-meta"><span>${escapeHtml(safeText(item.source_name || item.source,"뉴스"))}</span><span>${escapeHtml(safeText(item.date_label,"시간 미제공"))}</span><span>${escapeHtml(safeText(item.material_type,"기타"))} · 출처 ${fmtNum(item.source_count || 1,0)}개</span>${item.official_disclosure ? "<span>공식 공시</span>" : ""}</span></a>`).join("") : `<p class="empty">수집된 기사가 없습니다.</p>`;
   $("eventList").innerHTML = (data.events || []).length ? data.events.slice(0,12).map(item => `<div class="list-item"><strong>${escapeHtml(item.name)}</strong><span class="list-meta"><span>${escapeHtml(item.date)}</span><span>${escapeHtml(item.source)}</span></span></div>`).join("") : `<p class="empty">예정된 FRED 발표를 불러오지 못했습니다.</p>`;
 
   const promoted = Boolean(data.promotion.signal_enabled);
@@ -344,6 +413,12 @@ async function loadData(force=false) {
 }
 
 $("refreshButton").addEventListener("click", () => loadData(true));
+$("screenRefreshButton").addEventListener("click", () => {
+  if (currentDashboard) {
+    render(currentDashboard);
+    showToast("현재 받은 데이터를 다시 표시했습니다.", true);
+  }
+});
 if (window.__INITIAL_DASHBOARD__) render(window.__INITIAL_DASHBOARD__);
 loadData(false);
 setInterval(() => loadData(false), 120000);

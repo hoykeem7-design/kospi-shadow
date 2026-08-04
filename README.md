@@ -1,6 +1,18 @@
-# KOSPI Shadow Coach v4.3
+# KOSPI Shadow Decision Coach v5
 
 기존 누수 통제형 KOSPI 예측 파이프라인에 **시간대별 시장 코칭 PWA**를 결합한 개인 연구용 앱입니다.
+
+## v5 시간대별 투자 의사결정 코치
+
+- Asia/Seoul 기준 아침 브리핑, NXT 프리마켓, 동시호가, 시초 확인, 09:05 진입 조건 확인, 장중 관리, 마감, NXT 애프터마켓, 20:05 익일 관찰 단계를 분리합니다.
+- 설정된 `PREMARKET_SYMBOLS`만 실제 KIS `NX`/`J` 데이터로 관찰 순위를 만듭니다. 관찰 점수는 데이터 완전성과 방향성 참고 신호를 정렬하는 실험값이며 확률이 아닙니다.
+- 종목 모델은 미학습 상태입니다. `signal_enabled=false`, 확률 `null`, `UnavailablePredictor`를 유지하고 관찰·대기·데이터 부족만 표시합니다.
+- Google News RSS의 실제 시각을 KST로 정규화하고 같은 사건을 묶습니다. 날짜만 있는 기사는 임의 시각을 만들지 않습니다. `DART_API_KEY`가 있으면 설정 종목의 OpenDART 공식 공시를 선택적으로 수집합니다.
+- KIS NXT 애프터마켓 시세는 15:40 이후 실제 수신에 성공한 경우에만 표시합니다. 동일 시간대 이력이 부족하면 상대거래량·상대거래대금은 산출하지 않습니다.
+- Data Lab은 durable `premarket-history` 기록의 실제 표본·라벨·누락률만 집계합니다. Shadow 기록은 의사결정 스냅샷만 저장하며 조건을 충족하지 않은 가상 거래를 만들지 않습니다.
+- 정적 PWA의 화면 새로고침과 최신 Netlify 배포 확인을 구분합니다. 브라우저는 KIS·DART API를 직접 호출하지 않습니다.
+
+구조와 운영 진실성은 [DECISION_COACH_V5.md](DECISION_COACH_V5.md)에 정리했습니다.
 
 ## v4.3 개별 종목 NXT 2단계 프레임워크
 

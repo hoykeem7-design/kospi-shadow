@@ -11,7 +11,9 @@ on:
       timezone: "Asia/Seoul"
     - cron: "30 9 * * 1-5"
       timezone: "Asia/Seoul"
-    - cron: "37 15 * * 1-5"
+    - cron: "42 15 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "0 17,19,20 * * 1-5"
       timezone: "Asia/Seoul"
 
 permissions:
@@ -85,6 +87,8 @@ jobs:
               handle.write("| Metric | Count |\n|---|---:|\n")
               handle.write(f"| Configured symbols | {status.get('configured_symbol_count', 0)} |\n")
               handle.write(f"| Available symbols | {status.get('available_symbol_count', 0)} |\n")
+              handle.write(f"| Current smoke target | {status.get('smoke_target', 'unavailable')} |\n")
+              handle.write(f"| Target-available symbols | {status.get('smoke_available_symbol_count', 0)} |\n")
               if not status.get("configured_symbol_count"):
                   handle.write("\n> Warning: no symbols are configured; collection is not operational.\n")
           PY

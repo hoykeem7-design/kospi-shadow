@@ -33,7 +33,7 @@ from kospi_shadow.premarket_data import (
     normalize_snapshot,
     upsert_training_history,
 )
-from kospi_shadow.premarket_cli import run as run_premarket_cli
+from kospi_shadow.premarket_cli import run as run_premarket_cli, smoke_target_and_count
 
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -612,6 +612,34 @@ def test_smoke_mode_fails_when_no_symbols_are_configured(tmp_path, monkeypatch):
     ]) == 2
     status = (tmp_path / "outputs" / "premarket_collection_status.json").read_text(encoding="utf-8")
     assert '"configured_symbol_count": 0' in status
+
+
+@pytest.mark.parametrize(
+    ("when", "target", "expected"),
+    [
+        (datetime(2026, 8, 4, 8, 20, tzinfo=SEOUL), "nxt_premarket", 1),
+        (datetime(2026, 8, 4, 9, 10, tzinfo=SEOUL), "krx_post_open", 1),
+        (datetime(2026, 8, 4, 17, 0, tzinfo=SEOUL), "nxt_aftermarket", 1),
+    ],
+)
+def test_smoke_count_is_specific_to_the_current_live_session(when, target, expected):
+    result = {"symbols": [{
+        "premarket_summary": {"availability": "available"},
+        "opening_five_minute_summary": {"data_complete": True},
+        "aftermarket_summary": {"availability": "available"},
+    }]}
+    assert smoke_target_and_count(result, when) == (target, expected)
+
+
+def test_aftermarket_smoke_does_not_pass_on_krx_opening_data_alone():
+    result = {"symbols": [{
+        "premarket_summary": {"availability": "available"},
+        "opening_five_minute_summary": {"data_complete": True},
+        "aftermarket_summary": {"availability": "unavailable"},
+    }]}
+    assert smoke_target_and_count(
+        result, datetime(2026, 8, 4, 17, 0, tzinfo=SEOUL)
+    ) == ("nxt_aftermarket", 0)
 
 
 def test_workflows_serialize_history_and_pwa_advertises_actual_deploy_times():

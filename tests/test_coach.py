@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
+import shutil
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from kospi_shadow.coach import build_coaching, resolve_session_context
+from kospi_shadow.config import Settings
 
 SEOUL = ZoneInfo("Asia/Seoul")
 
@@ -117,3 +121,85 @@ def test_nxt_pre_never_recommends_entry_without_realtime_nxt_feed():
         futures=None,
     )
     assert result["action"] == "WAIT_CONFIRMATION"
+
+
+def test_opendart_is_optional_when_key_is_not_configured(monkeypatch):
+    from kospi_shadow import coach
+    monkeypatch.delenv("DART_API_KEY", raising=False)
+    rows, status = coach.fetch_opendart_disclosures(
+        symbols=["005930"], start="2026-08-03", end="2026-08-04", timeout=3, retries=1
+    )
+    assert rows == []
+    assert status["unavailable_reason"] == "DART_API_KEY_NOT_CONFIGURED"
+
+
+def test_opendart_keeps_receipt_date_without_fake_time(monkeypatch):
+    from kospi_shadow import coach
+
+    def fake_get(url, *, params=None, headers=None, timeout=30, retries=4):
+        return _FakeResponse({
+            "status": "000",
+            "list": [
+                {"stock_code": "005930", "report_nm": "주요사항보고", "rcept_no": "202608040001", "rcept_dt": "20260804"},
+                {"stock_code": "000660", "report_nm": "다른 종목", "rcept_no": "202608040002", "rcept_dt": "20260804"},
+            ],
+        })
+
+    real_getenv = coach.os.getenv
+    monkeypatch.setattr(coach.os, "getenv", lambda name, default="": "configured" if name == "DART_API_KEY" else real_getenv(name, default))
+    monkeypatch.setattr(coach, "_retry_get", fake_get)
+    rows, status = coach.fetch_opendart_disclosures(
+        symbols=["005930"], start="2026-08-03", end="2026-08-04", timeout=3, retries=1
+    )
+    assert status["availability"] == "available"
+    assert len(rows) == 1
+    assert rows[0]["published_at"] == "2026-08-04"
+    assert rows[0]["time_precision"] == "date_only"
+    assert "00:00" not in rows[0]["published_at"]
+
+
+def test_generated_dashboard_keeps_old_fields_and_adds_v5_schema(monkeypatch, tmp_path):
+    from kospi_shadow import coach
+
+    root = Path(__file__).resolve().parents[1]
+    shutil.copytree(root / "app", tmp_path / "app")
+    (tmp_path / "outputs").mkdir()
+    (tmp_path / "outputs" / "metrics.json").write_text(json.dumps({
+        "latest_prediction": {
+            "candidate_target_date": "2026-08-05",
+            "probability_intraday_up": None,
+            "probability_available": False,
+            "research_direction": "FLAT",
+        },
+        "promotion": {"signal_enabled": False},
+        "data_manifest": {
+            "target_provider": "KRX",
+            "target_official": True,
+            "target_latest_source": "KRX",
+            "target_date_max": "2026-08-04",
+            "collection_warnings": [],
+        },
+        "classification": {},
+        "strategy_proxy": {},
+    }), encoding="utf-8")
+    settings = Settings(raw={
+        "project": {"timezone": "Asia/Seoul"},
+        "data": {"cache_dir": "data/cache", "request_timeout_seconds": 1, "request_retries": 1},
+        "model": {}, "promotion": {}, "coach": {},
+        "premarket": {"symbols": [], "history_dir": "history"},
+        "decision_coach": {},
+    }, config_path=tmp_path / "config.yml")
+    monkeypatch.setattr(coach, "fetch_kis_access_token", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("unavailable")))
+    monkeypatch.setattr(coach, "fetch_market_news", lambda **kwargs: [])
+    monkeypatch.setattr(coach, "fetch_fred_release_calendar", lambda **kwargs: [])
+    monkeypatch.delenv("DART_API_KEY", raising=False)
+    dashboard = coach.generate_coach_app(
+        settings, tmp_path, now_seoul=datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL)
+    )
+    assert dashboard["schema_version"] == 4
+    assert dashboard["app_version"] == "5.0.0"
+    assert "prediction" in dashboard
+    assert "premarket_experiment" in dashboard
+    assert dashboard["decision_coach_v5"]["phase"]["phase"] == "entry_decision"
+    assert dashboard["decision_coach_v5"]["signal_gate"]["probability"] is None
+    assert (tmp_path / "site" / "data" / "dashboard.json").is_file()

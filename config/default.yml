@@ -1,5 +1,5 @@
 project:
-  name: kospi_shadow_coach_v4
+  name: kospi_shadow_decision_coach_v5
   timezone: Asia/Seoul
   random_state: 20260731
 
@@ -57,6 +57,32 @@ coach:
   news_query: "코스피 OR 증시 OR 환율 OR 금리 OR 반도체"
   news_limit: 12
   event_horizon_days: 7
+
+# Presentation/ranking controls, not validated trading rules. Observation
+# scores sort received evidence and must never be displayed as probabilities.
+decision_coach:
+  maximum_watch_candidates: 5
+  maximum_entry_candidates: 3
+  maximum_next_day_candidates: 5
+  maximum_news_items: 20
+  ranking_completeness_weight: 0.70
+  ranking_directional_weight: 0.30
+  news_fresh_minutes: 120
+  news_recent_minutes: 720
+  news_duplicate_window_minutes: 360
+  minimum_data_completeness: 0.75
+  paper_fee_bps_per_side: 5.0
+  paper_slippage_bps_per_side: 5.0
+  maximum_decision_records_per_symbol: 5000
+  intraday_review_times: ["09:30", "10:30", "12:00", "14:30", "15:20"]
+  coach_deploy_times: ["07:45", "08:10", "08:47", "09:10", "12:00", "15:20", "15:35", "15:45", "18:00", "20:05"]
+  collector_times: ["08:12", "08:22", "08:32", "08:42", "08:50", "08:55", "09:00", "09:05", "09:30", "15:42", "17:00", "19:00", "20:00"]
+  signal_gate:
+    require_walk_forward_validation: true
+    require_no_future_leakage: true
+    require_brier_improvement: true
+    require_calibration: true
+    require_positive_cost_adjusted_return: true
 
 # Individual-stock NXT experiment. An empty list is intentional: production
 # never invents a watchlist. Configure six/seven-character domestic symbols

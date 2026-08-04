@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="KOSPI 확률 예측과 시장 시간대별 코칭을 한 화면에서 확인하는 개인 연구용 앱">
-  <title>KOSPI Shadow Coach</title>
+  <meta name="description" content="실데이터와 검증 상태를 구분하는 KOSPI 시간대별 투자 의사결정 코치 v5">
+  <title>KOSPI Shadow Decision Coach v5</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
@@ -14,13 +14,23 @@
   <header class="topbar">
     <div>
       <p class="eyebrow">KOSPI SHADOW</p>
-      <h1>Market Coach</h1>
+      <h1>Decision Coach v5</h1>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
-      <button id="refreshButton" class="icon-button" aria-label="최신 배포본 확인" title="최신 배포본 확인">↻</button>
+      <button id="screenRefreshButton" class="ghost" aria-label="화면 새로고침">화면 새로고침</button>
+      <button id="refreshButton" class="ghost" aria-label="최신 배포본 확인">최신 배포 확인</button>
     </div>
   </header>
+
+  <nav class="section-nav" aria-label="앱 메뉴">
+    <a href="#decision-summary">지금 판단</a>
+    <a href="#decision-cards">종목 후보</a>
+    <a href="#news-section">기사·공시</a>
+    <a href="#post-market">마감·애프터</a>
+    <a href="#data-lab">Data Lab</a>
+    <a href="#operations">수집 상태</a>
+  </nav>
 
   <main id="app" class="container" aria-live="polite">
     <section class="hero card">
@@ -56,6 +66,26 @@
           <p class="next-check">다음 확인: <b id="nextCheckpoint">--</b></p>
         </div>
       </div>
+    </section>
+
+    <section id="decision-summary" class="section-block card decision-summary">
+      <div class="section-title">
+        <h2>지금 판단할 것</h2>
+        <span id="decisionPhase" class="badge">단계 확인 중</span>
+      </div>
+      <p id="decisionPhaseDescription" class="muted"></p>
+      <div class="question-grid">
+        <div><span>1</span><strong>무엇을 관찰할까</strong><p id="whatToWatch">데이터 확인 중</p></div>
+        <div><span>2</span><strong>언제 진입을 검토할까</strong><p id="whenToEnter">09:05 완성 데이터 확인 전 판단 보류</p></div>
+        <div><span>3</span><strong>언제 축소·청산을 검토할까</strong><p id="whenToExit">진입 논리와 구조적 기준 재확인</p></div>
+      </div>
+      <div id="topChecks" class="chip-list"></div>
+      <p class="experiment-warning">종목 확률 모델은 미학습 상태입니다. 프리장 가격과 거래량은 후보 선정 신호이며 본장 방향을 보장하지 않습니다.</p>
+    </section>
+
+    <section id="decision-cards" class="section-block card">
+      <div class="section-title"><h2>종목 의사결정 카드</h2><span class="muted">최대 5개 관찰 후보</span></div>
+      <div id="decisionCardList" class="decision-card-list"></div>
     </section>
 
     <section class="section-block card probability-explanation">
@@ -131,14 +161,40 @@
     </section>
 
     <section class="two-column">
-      <section class="card section-block">
-        <div class="section-title"><h2>주요 기사</h2><span class="muted">제목 기반 분류</span></div>
+      <section id="news-section" class="card section-block">
+        <div class="section-title"><h2>주요 기사·공시</h2><span id="disclosureAvailability" class="muted">시각·출처 확인</span></div>
         <div id="newsList" class="list"></div>
       </section>
       <section class="card section-block">
         <div class="section-title"><h2>주요 발표</h2><span class="muted">향후 7일</span></div>
         <div id="eventList" class="list"></div>
       </section>
+    </section>
+
+    <section id="post-market" class="section-block">
+      <div class="section-title"><h2>마감·애프터마켓·익일 관찰</h2><span class="muted">없는 값은 0으로 대체하지 않음</span></div>
+      <div class="post-market-grid">
+        <section class="card post-card"><h3>정규장 마감 분석</h3><div id="closingReview"></div></section>
+        <section class="card post-card"><h3>NXT 애프터마켓</h3><div id="aftermarketReview"></div></section>
+        <section class="card post-card"><h3>20:05 다음날 관찰</h3><div id="nextDayWatch"></div></section>
+      </div>
+    </section>
+
+    <section id="data-lab" class="section-block card">
+      <div class="section-title"><h2>Data Lab</h2><span class="badge warning-badge">백테스트 미수행</span></div>
+      <div class="table-wrap"><table><thead><tr><th>종목</th><th>거래일</th><th>프리장</th><th>동시호가</th><th>첫 5분</th><th>09:30 라벨</th><th>종가 라벨</th><th>완전성</th><th>학습까지</th></tr></thead><tbody id="dataLabBody"></tbody></table></div>
+      <div id="modelLab" class="model-lab"></div>
+    </section>
+
+    <section class="section-block card">
+      <div class="section-title"><h2>Shadow 모의매매 기록</h2><span class="muted">실제 주문 없음</span></div>
+      <div id="shadowRecords" class="list"></div>
+    </section>
+
+    <section id="operations" class="section-block card">
+      <div class="section-title"><h2>수집·배포 상태</h2><span id="versionBadge" class="badge">v5</span></div>
+      <dl id="operationsMetrics" class="metric-list"></dl>
+      <p class="explanation-note">화면 새로고침은 현재 받은 데이터를 다시 그립니다. 최신 배포 확인은 Netlify의 정적 dashboard.json만 확인하며 브라우저에서 KIS API를 호출하지 않습니다.</p>
     </section>
 
     <section class="two-column">
@@ -155,7 +211,7 @@
 
     <section class="notice">
       <strong>연구용 코칭</strong>
-      <p>이 앱은 자동주문이나 수익 보장 도구가 아닙니다. 현재 모델 승격 기준이 닫혀 있으면 항상 관망을 우선합니다.</p>
+      <p>이 앱은 자동주문이나 수익 보장 도구가 아닙니다. 종목 신호 게이트가 닫혀 있으면 관찰·대기만 표시하며 직접적인 매매 권고를 제공하지 않습니다.</p>
     </section>
   </main>
 

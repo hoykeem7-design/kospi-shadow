@@ -22,6 +22,7 @@ from .data import (
     _retry_get,
     fetch_kis_access_token,
 )
+from .decision_coach import build_decision_coach
 from .premarket_data import build_premarket_experiment
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -30,6 +31,7 @@ KIS_INDEX_PRICE_TR_ID = "FHPUP02100000"
 KIS_FUTURES_BOARD_ENDPOINT = "/uapi/domestic-futureoption/v1/quotations/display-board-futures"
 KIS_FUTURES_BOARD_TR_ID = "FHPIF05030200"
 FRED_RELEASE_DATES_ENDPOINT = "https://api.stlouisfed.org/fred/releases/dates"
+OPENDART_LIST_ENDPOINT = "https://opendart.fss.or.kr/api/list.json"
 
 
 @dataclass(frozen=True)
@@ -322,11 +324,84 @@ def fetch_market_news(*, query: str, limit: int, timeout: int, retries: int) -> 
             "title": title,
             "link": link,
             "source": source,
+            "source_name": source,
+            "source_type": "news",
+            "source_url": link,
+            "source_timezone": "UTC",
             "published_at": _parse_rss_date(node.findtext("pubDate")),
             "impact": impact,
+            "material_direction": "unknown" if impact == "neutral" else impact,
+            "official_disclosure": False,
             "tags": tags,
         })
     return items
+
+
+def fetch_opendart_disclosures(
+    *, symbols: list[str], start: str, end: str, timeout: int, retries: int
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Optionally fetch official disclosures without making the app key mandatory."""
+    api_key = os.getenv("DART_API_KEY", "").strip()
+    if not api_key:
+        return [], {
+            "availability": "unavailable",
+            "unavailable_reason": "DART_API_KEY_NOT_CONFIGURED",
+        }
+    response = _retry_get(
+        OPENDART_LIST_ENDPOINT,
+        params={
+            "crtfc_key": api_key,
+            "bgn_de": start.replace("-", ""),
+            "end_de": end.replace("-", ""),
+            "page_count": 100,
+        },
+        headers={"User-Agent": "KOSPI-Shadow-Coach/5.0"},
+        timeout=timeout,
+        retries=max(1, min(retries, 2)),
+    )
+    payload = response.json()
+    status = str(payload.get("status") or "")
+    if status == "013":
+        return [], {"availability": "available", "unavailable_reason": None, "received_count": 0}
+    if status != "000":
+        return [], {
+            "availability": "unavailable",
+            "unavailable_reason": f"OPENDART_STATUS_{status or 'UNKNOWN'}",
+        }
+    allowed = set(symbols)
+    received = datetime.now(SEOUL).isoformat()
+    result: list[dict[str, Any]] = []
+    for row in payload.get("list") or []:
+        symbol = str(row.get("stock_code") or "").strip()
+        if allowed and symbol not in allowed:
+            continue
+        title = str(row.get("report_nm") or "").strip()
+        receipt_no = str(row.get("rcept_no") or "").strip()
+        if not title:
+            continue
+        result.append({
+            "title": title,
+            "source_name": "OpenDART",
+            "source_type": "official_disclosure",
+            "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt_no}" if receipt_no else None,
+            # The list API provides a receipt date but not a reliable receipt
+            # time. It remains date_only and never receives an artificial time.
+            "published_at": (
+                f"{str(row.get('rcept_dt'))[:4]}-{str(row.get('rcept_dt'))[4:6]}-{str(row.get('rcept_dt'))[6:8]}"
+                if len(str(row.get("rcept_dt") or "")) == 8
+                else None
+            ),
+            "time_precision": "date_only",
+            "source_timezone": "Asia/Seoul",
+            "observed_at": received,
+            "received_at": received,
+            "material_direction": "unknown",
+            "material_confidence": "high",
+            "official_disclosure": True,
+            "related_symbols": [symbol] if symbol else [],
+            "impact_horizon": "unknown",
+        })
+    return result, {"availability": "available", "unavailable_reason": None, "received_count": len(result)}
 
 
 def fetch_fred_release_calendar(*, start: str, end: str, timeout: int, retries: int) -> list[dict[str, Any]]:
@@ -583,10 +658,24 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         token = fetch_kis_access_token(timeout=timeout, retries=retries)
         try:
             index = fetch_kis_index_snapshot(timeout=timeout, retries=retries, token=token)
+            index.update({
+                "observed_at": None,
+                "received_at": datetime.now(SEOUL).isoformat(),
+                "data_delay_seconds": None,
+                "stale": None,
+                "data_quality": "unknown_time",
+            })
         except Exception as exc:
             warnings.append(f"KIS index snapshot: {exc}")
         try:
             futures = fetch_kis_futures_snapshot(timeout=timeout, retries=retries, token=token)
+            futures.update({
+                "observed_at": None,
+                "received_at": datetime.now(SEOUL).isoformat(),
+                "data_delay_seconds": None,
+                "stale": None,
+                "data_quality": "unknown_time",
+            })
         except Exception as exc:
             warnings.append(f"KIS futures snapshot: {exc}")
     except Exception as exc:
@@ -638,6 +727,32 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         }
         warnings.append("Two-stage premarket experiment: unavailable")
 
+    configured_stock_symbols = [
+        str(item.get("symbol")) for item in premarket_experiment.get("symbols") or []
+        if item.get("symbol")
+    ]
+    if not configured_stock_symbols:
+        disclosure_status = {
+            "availability": "unavailable",
+            "unavailable_reason": "NO_PREMARKET_SYMBOLS_CONFIGURED",
+        }
+    else:
+        try:
+            disclosures, disclosure_status = fetch_opendart_disclosures(
+                symbols=configured_stock_symbols,
+                start=(now_seoul.date() - timedelta(days=2)).isoformat(),
+                end=now_seoul.date().isoformat(),
+                timeout=timeout,
+                retries=retries,
+            )
+            news.extend(disclosures)
+        except Exception:
+            disclosure_status = {
+                "availability": "unavailable",
+                "unavailable_reason": "OPENDART_REQUEST_FAILED",
+            }
+            warnings.append("OpenDART disclosures: unavailable")
+
     session = resolve_session_context(now_seoul)
     coaching = build_coaching(
         prediction=prediction,
@@ -646,9 +761,26 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         index=index,
         futures=futures,
     )
+    market_payload = {
+        "kospi": index,
+        "kospi200_futures": futures,
+        "factors": factors,
+    }
+    decision_coach = build_decision_coach(
+        settings_raw=settings.raw,
+        project_root=project_root,
+        now=now_seoul,
+        premarket_experiment=premarket_experiment,
+        news=news,
+        events=events,
+        market=market_payload,
+        index_signal_enabled=bool(promotion.get("signal_enabled")),
+    )
+    decision_coach["official_disclosure"] = disclosure_status
     dashboard = {
-        "schema_version": 3,
-        "app_version": "4.3.0",
+        "schema_version": 4,
+        "app_version": "5.0.0",
+        "build_sha": os.getenv("GITHUB_SHA") or None,
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {
             "code": session.code,
@@ -675,11 +807,7 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
             "target_date_max": manifest.get("target_date_max"),
             "warnings": [*manifest.get("collection_warnings", []), *warnings],
         },
-        "market": {
-            "kospi": index,
-            "kospi200_futures": futures,
-            "factors": factors,
-        },
+        "market": market_payload,
         "market_phase": premarket_experiment.get("market_phase"),
         "premarket_experiment": premarket_experiment,
         "coaching": coaching,
@@ -687,8 +815,9 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
             prediction=prediction, index=index, futures=futures, factors=factors, news=news, events=events
         ),
         "timeline": _checkpoint_timeline(now_seoul),
-        "news": news,
+        "news": decision_coach["news"],
         "events": events,
+        "decision_coach_v5": decision_coach,
         "runtime_seconds": round(time.perf_counter() - started, 3),
     }
 
@@ -712,6 +841,7 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         "session_code": session.code,
         "coach_action": coaching["action"],
         "coach_headline": coaching["headline"],
+        "decision_phase": decision_coach["phase"]["phase"],
         "target_official": manifest.get("target_official"),
     })
     (data_dir / "history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
