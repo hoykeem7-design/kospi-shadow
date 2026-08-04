@@ -1,8 +1,13 @@
 __pycache__/
 .pytest_cache/
+.venv/
+*.egg-info/
 *.pyc
 *.joblib
 data/cache/*.csv
+data/cache/premarket/
+data/premarket_history/
+premarket-history-store/
 outputs/*
 !outputs/.gitkeep
 state/

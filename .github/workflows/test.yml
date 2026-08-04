@@ -18,14 +18,16 @@ jobs:
           cache: pip
       - run: pip install -e ".[test]"
       - name: Run Python tests
-        run: pytest -q
+        run: PYTHONPATH=src pytest -q
+      - name: Compile Python sources
+        run: python -m compileall -q src tests
       - name: Parse workflow YAML
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import yaml
-          files = sorted(Path('.github/workflows').glob('*.yml'))
+          files = sorted(Path('.github/workflows').glob('*.yml')) + sorted(Path('.github/workflows').glob('*.yaml'))
           for path in files:
               yaml.safe_load(path.read_text(encoding='utf-8'))
           print(f'PyYAML PASS: {len(files)} workflow files')

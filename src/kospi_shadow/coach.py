@@ -22,6 +22,7 @@ from .data import (
     _retry_get,
     fetch_kis_access_token,
 )
+from .premarket_data import build_premarket_experiment
 
 SEOUL = ZoneInfo("Asia/Seoul")
 KIS_INDEX_PRICE_ENDPOINT = "/uapi/domestic-stock/v1/quotations/inquire-index-price"
@@ -371,13 +372,20 @@ def build_briefing(
     events: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
-    probability = float(prediction.get("probability_intraday_up", 0.5))
+    probability = _prediction_probability(prediction)
     direction = str(prediction.get("research_direction", "FLAT"))
-    items.append({
-        "tone": "positive" if probability > 0.55 else ("negative" if probability < 0.45 else "neutral"),
-        "title": f"모델 {direction}",
-        "text": f"대상일 상승확률은 {probability:.1%}입니다. 승격 게이트와 실시간 확인을 함께 봐야 합니다.",
-    })
+    if probability is None:
+        items.append({
+            "tone": "neutral",
+            "title": "모델 확률 산출 불가",
+            "text": "사용 가능한 확률이 없어 중립값으로 대체하지 않습니다.",
+        })
+    else:
+        items.append({
+            "tone": "positive" if probability > 0.55 else ("negative" if probability < 0.45 else "neutral"),
+            "title": f"모델 {direction}",
+            "text": f"대상일 상승확률은 {probability:.1%}입니다. 승격 게이트와 실시간 확인을 함께 봐야 합니다.",
+        })
 
     live_parts: list[str] = []
     if index and index.get("change_rate") is not None:
@@ -415,9 +423,20 @@ def build_briefing(
     return items[:5]
 
 
+def _prediction_probability(prediction: dict[str, Any]) -> float | None:
+    value = prediction.get("probability_intraday_up")
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        probability = float(value)
+    except (TypeError, ValueError):
+        return None
+    return probability if math.isfinite(probability) and 0.0 <= probability <= 1.0 else None
+
+
 def _market_alignment(prediction: dict[str, Any], index: dict[str, Any] | None, futures: dict[str, Any] | None) -> dict[str, Any]:
-    probability = float(prediction.get("probability_intraday_up", 0.5))
-    base_direction = "up" if probability >= 0.5 else "down"
+    probability = _prediction_probability(prediction)
+    base_direction = "unavailable" if probability is None else ("up" if probability >= 0.5 else "down")
     signals: list[tuple[str, float]] = []
     for label, item, weight in (("KOSPI", index, 0.45), ("KOSPI200 선물", futures, 0.55)):
         if item and item.get("change_rate") is not None:
@@ -426,7 +445,7 @@ def _market_alignment(prediction: dict[str, Any], index: dict[str, Any] | None, 
             signals.append((label, signed * weight))
     live_score = sum(value for _, value in signals)
     live_direction = "up" if live_score > 0.08 else ("down" if live_score < -0.08 else "neutral")
-    aligned = live_direction == base_direction or live_direction == "neutral"
+    aligned = None if probability is None else (live_direction == base_direction or live_direction == "neutral")
     return {
         "base_direction": base_direction,
         "live_direction": live_direction,
@@ -444,14 +463,18 @@ def build_coaching(
     index: dict[str, Any] | None,
     futures: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    p = float(prediction.get("probability_intraday_up", 0.5))
+    p = _prediction_probability(prediction)
     direction = str(prediction.get("research_direction", "FLAT"))
     alignment = _market_alignment(prediction, index, futures)
     gate_open = bool(promotion.get("signal_enabled"))
-    confidence = min(1.0, abs(p - 0.5) / 0.15)
+    confidence = 0.0 if p is None else min(1.0, abs(p - 0.5) / 0.15)
     timing_score = round(100 * (0.35 * confidence + 0.65 * min(1.0, abs(alignment["live_score"]))), 0)
 
-    if not gate_open:
+    if p is None:
+        action = "WAIT"
+        headline = "확률 산출 불가"
+        rationale = "사용 가능한 모델 확률이 없어 50% 중립값으로 대체하지 않습니다."
+    elif not gate_open:
         action = "WAIT"
         headline = "관망 우선"
         rationale = "모델 승격 기준이 닫혀 있어 실제 매수 신호로 사용하지 않습니다."
@@ -485,7 +508,7 @@ def build_coaching(
         "headline": headline,
         "rationale": rationale,
         "timing_score": timing_score,
-        "confidence_label": "높음" if confidence >= 0.7 else ("보통" if confidence >= 0.35 else "낮음"),
+        "confidence_label": "데이터 없음" if p is None else ("높음" if confidence >= 0.7 else ("보통" if confidence >= 0.35 else "낮음")),
         "alignment": alignment,
         "next_checkpoint_at": session.next_checkpoint_at,
         "next_checkpoint_label": session.next_checkpoint_label,
@@ -589,6 +612,32 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         events = []
         warnings.append(f"FRED release calendar: {exc}")
 
+    try:
+        premarket_experiment = build_premarket_experiment(
+            settings,
+            project_root,
+            now_seoul=now_seoul,
+            market_snapshot=index,
+        )
+    except Exception:
+        # The existing KOSPI dashboard must remain available even if the
+        # isolated stock-level experiment cannot collect data.
+        premarket_experiment = {
+            "schema_version": 1,
+            "feature_name": "two_stage_nxt_premarket_framework",
+            "display_name": "2단계 데이터 수집·피처·검증 프레임워크. 종목 확률 모델은 미학습 상태.",
+            "market_phase": "unavailable",
+            "phase_display": "데이터 미수신",
+            "configured": False,
+            "symbols": [],
+            "data_availability": {
+                "availability": "unavailable",
+                "unavailable_reason": "premarket_experiment_generation_failed",
+            },
+            "experimental": True,
+        }
+        warnings.append("Two-stage premarket experiment: unavailable")
+
     session = resolve_session_context(now_seoul)
     coaching = build_coaching(
         prediction=prediction,
@@ -598,8 +647,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         futures=futures,
     )
     dashboard = {
-        "schema_version": 2,
-        "app_version": "4.2.0",
+        "schema_version": 3,
+        "app_version": "4.3.0",
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {
             "code": session.code,
@@ -631,6 +680,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
             "kospi200_futures": futures,
             "factors": factors,
         },
+        "market_phase": premarket_experiment.get("market_phase"),
+        "premarket_experiment": premarket_experiment,
         "coaching": coaching,
         "briefing": build_briefing(
             prediction=prediction, index=index, futures=futures, factors=factors, news=news, events=events

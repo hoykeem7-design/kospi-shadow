@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kospi-shadow"
-version = "4.2.0"
+version = "4.3.0"
 description = "Leakage-controlled KOSPI forecast and session-aware coaching PWA with automatic Netlify deployment"
 requires-python = ">=3.11"
 dependencies = [
@@ -23,6 +23,7 @@ test = ["pytest>=8,<10"]
 [project.scripts]
 kospi-shadow = "kospi_shadow.cli:main"
 kospi-shadow-coach = "kospi_shadow.coach_cli:main"
+kospi-shadow-premarket = "kospi_shadow.premarket_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

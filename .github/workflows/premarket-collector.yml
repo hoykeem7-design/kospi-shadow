@@ -1,0 +1,112 @@
+name: NXT Premarket Snapshot Collector
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "12,22,32,42 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "50,55 8 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "0,5 9 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "30 9 * * 1-5"
+      timezone: "Asia/Seoul"
+    - cron: "37 15 * * 1-5"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: write
+
+# Coach and Collector both update the durable history branch. One shared group
+# prevents a later run from overwriting another run's point-in-time records.
+concurrency:
+  group: kospi-shadow-live-data
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
+      PREMARKET_HISTORY_DIR: premarket-history-store/history
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve durable history ref
+        id: history_ref
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin refs/heads/premarket-history >/dev/null 2>&1; then
+            echo "ref=premarket-history" >> "$GITHUB_OUTPUT"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out durable premarket history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.history_ref.outputs.ref }}
+          path: premarket-history-store
+          fetch-depth: 1
+      - name: Initialize durable history branch
+        if: ${{ steps.history_ref.outputs.exists == 'false' }}
+        shell: bash
+        run: |
+          git -C premarket-history-store switch --orphan premarket-history
+          git -C premarket-history-store rm -rf .
+          mkdir -p premarket-history-store/history
+          touch premarket-history-store/history/.gitkeep
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Verify provider credentials
+        shell: bash
+        run: |
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+      - run: pip install .
+      - name: Collect configured stock snapshots
+        run: kospi-shadow-premarket --config config/default.yml --project-root . --require-symbols
+      - name: Persist normalized and raw history
+        shell: bash
+        run: |
+          git -C premarket-history-store config user.name "github-actions[bot]"
+          git -C premarket-history-store config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C premarket-history-store add history
+          if ! git -C premarket-history-store diff --cached --quiet; then
+            git -C premarket-history-store commit -m "Store premarket history for run $GITHUB_RUN_ID"
+            git -C premarket-history-store push origin HEAD:premarket-history
+          fi
+      - name: Publish configured and available symbol counts
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("outputs/premarket_collection_status.json")
+          status = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write("## NXT premarket collection\n\n")
+              handle.write("| Metric | Count |\n|---|---:|\n")
+              handle.write(f"| Configured symbols | {status.get('configured_symbol_count', 0)} |\n")
+              handle.write(f"| Available symbols | {status.get('available_symbol_count', 0)} |\n")
+              if not status.get("configured_symbol_count"):
+                  handle.write("\n> Warning: no symbols are configured; collection is not operational.\n")
+          PY
+      - name: Upload non-secret collection status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nxt-premarket-status-${{ github.run_number }}
+          path: outputs/premarket_collection_status.json
+          if-no-files-found: warn
+          retention-days: 14
