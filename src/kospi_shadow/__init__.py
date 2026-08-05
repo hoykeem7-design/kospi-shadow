@@ -1,3 +1,3 @@
-"""KOSPI SHADOW v5.1: market gate and time-based stock decision framework."""
+"""KOSPI SHADOW v5.2: decision-first market gate and stock framework."""
 
-__version__ = "5.1.0"
+__version__ = "5.2.0"

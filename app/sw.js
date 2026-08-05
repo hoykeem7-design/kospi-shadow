@@ -1,4 +1,4 @@
-const STATIC_CACHE = "kospi-shadow-decision-coach-v5-1-static";
+const STATIC_CACHE = "kospi-shadow-decision-coach-v5-2-static";
 const STATIC_ASSETS = [
   "./",
   "index.html",
@@ -19,10 +19,19 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
+    caches.keys().then(async (keys) => {
+      const replacedAppShell = keys.some((key) => key.startsWith("kospi-shadow-decision-coach-") && key !== STATIC_CACHE);
+      await Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key)));
+      await self.clients.claim();
+      if (!replacedAppShell) return;
+      const windows = await self.clients.matchAll({type:"window"});
+      await Promise.all(windows.map((client) => client.navigate ? client.navigate(client.url) : null));
+    })
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 async function networkFirst(request) {
