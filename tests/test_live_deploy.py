@@ -69,9 +69,9 @@ def test_app_renders_probability_explanation_panel():
     assert "effect_probability_points" in javascript
 
 
-def test_v52_app_shell_is_decision_first_and_research_is_collapsed():
+def test_v53_app_shell_is_decision_first_and_research_is_collapsed():
     html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
-    assert "Decision Coach v5.2" in html
+    assert "Decision Coach v5.3" in html
     assert 'data-tab="today"' in html
     assert 'data-tab="candidates"' in html
     assert 'data-tab="research"' in html
@@ -83,14 +83,14 @@ def test_v52_app_shell_is_decision_first_and_research_is_collapsed():
     assert 'class="decision-dock"' in html
 
 
-def test_v52_refresh_reloads_the_app_shell_and_rotates_static_cache():
+def test_v53_refresh_reloads_the_app_shell_and_rotates_static_cache():
     javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
     worker = (ROOT / "app" / "sw.js").read_text(encoding="utf-8")
-    assert 'const APP_SHELL_VERSION = "5.2.0"' in javascript
+    assert 'const APP_SHELL_VERSION = "5.3.0"' in javascript
     assert "reloadAppShell" in javascript
     assert "window.location.reload()" in javascript
     assert 'registration.update()' in javascript
-    assert 'kospi-shadow-decision-coach-v5-2-static' in worker
+    assert 'kospi-shadow-decision-coach-v5-3-static' in worker
     assert 'client.navigate(client.url)' in worker
     assert 'SKIP_WAITING' in worker
 
@@ -102,3 +102,15 @@ def test_candidate_ui_is_explicitly_subordinate_to_market_gate():
     assert 'candidateGateNotice' in javascript
     assert '관찰만 · 진입 잠금' in javascript
     assert 'cards.map((card, index) => renderDecisionCard(card, gateLocked, index))' in javascript
+
+
+def test_theme_supply_radar_is_shadow_only_and_exposes_no_entry_unlock():
+    html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "kospi_shadow" / "theme_radar.py").read_text(encoding="utf-8")
+    assert 'id="theme-supply-radar"' in html
+    assert 'id="themeRadarList"' in html
+    assert "renderThemeSupplyRadar" in javascript
+    assert "direct_query_rank_available" in source
+    assert '"entry_signal_enabled": False' in source
+    assert '"can_override_kospi_gate": False' in source

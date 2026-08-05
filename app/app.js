@@ -8,7 +8,7 @@ const safeUrl = (value) => { try { const url = new URL(String(value)); return ["
 // These are actual Coach workflow deployment times. The four Market Gate
 // checkpoints are published at 07:30, 08:00, 08:50 and 09:05 KST.
 const AUTO_UPDATE_TIMES = ["07:30","08:00","08:50","09:05","12:00","15:20","15:35","15:45","18:00","20:05"];
-const APP_SHELL_VERSION = "5.2.0";
+const APP_SHELL_VERSION = "5.3.0";
 const CONFIRMATION_LABELS = {
   nxt_configured_symbols_positive: "NXT 관찰 종목의 방향 확인",
   kospi200_futures_nonnegative: "KOSPI200 선물의 비약세 확인",
@@ -272,14 +272,83 @@ function conditionList(items, empty="확인 조건이 없습니다.") {
   }).join("")}</ul>`;
 }
 
+function supplyStateLabel(state) {
+  return ({
+    BROAD_POSITIVE:"동반 상승 관찰",
+    BROAD_NEGATIVE:"동반 약세",
+    SINGLE_NAME:"단일 종목",
+    MIXED:"방향 혼재",
+    UNAVAILABLE:"수급 미수신"
+  })[state] || safeText(state, "수급 확인 중");
+}
+
+function themeMemberRow(member) {
+  const role = member?.role === "LEADER_OBSERVATION" ? "대장 관찰" : "후속 관찰";
+  const relative = member?.relative_turnover == null ? "상대거래대금 --" : `상대거래대금 ${fmtNum(member.relative_turnover,2)}배`;
+  return `<div class="theme-member"><div><strong>${escapeHtml(member?.name)}</strong><small>${escapeHtml(member?.symbol)} · ${escapeHtml(role)}</small></div><div><span class="${clsFor(member?.active_return)}">${member?.active_return == null ? "방향 미수신" : fmtPct(member.active_return,2)}</span><small>${escapeHtml(relative)}</small></div></div>`;
+}
+
+function renderThemeCard(theme) {
+  const supply = theme?.supply || {};
+  const attention = theme?.attention || {};
+  const alignment = theme?.global_alignment || {};
+  const previousClose = theme?.previous_close_context || {};
+  const weather = theme?.weather_event || {};
+  const members = theme?.members || [];
+  const catalysts = theme?.catalysts || [];
+  const blockers = theme?.blockers || [];
+  const actionClass = theme?.action === "CHASE_REVIEW" ? "chase" : (theme?.action === "OBSERVE" ? "observe" : "wait");
+  const weatherLabel = weather.availability === "available" ? "날씨 데이터 확인" : (weather.availability === "news_proxy" ? "날씨 기사 프록시" : null);
+  const chips = [
+    supplyStateLabel(supply.state),
+    `구성 ${fmtNum(supply.member_count,0)}종목`,
+    supply.relative_turnover_median == null ? "상대거래대금 미수신" : `상대거래대금 중앙값 ${fmtNum(supply.relative_turnover_median,2)}배`,
+    attention.availability === "proxy" ? `기사·공시 프록시 ${fmtNum(attention.news_count,0)}건` : "관심도 미연결",
+    previousClose.availability === "available" ? "전일 종가 기준 확인" : "전일 종가 미수신",
+    alignment.availability === "available" ? alignment.label : null,
+    weatherLabel
+  ].filter(Boolean);
+  return `<article class="theme-card ${actionClass}">
+    <div class="theme-card-head"><div><span class="rank">#${fmtNum(theme?.rank,0)}</span><h3>${escapeHtml(theme?.label)}</h3></div><span class="theme-action ${actionClass}">${escapeHtml(theme?.action_label)}</span></div>
+    <div class="theme-chip-row">${chips.map(value => `<span>${escapeHtml(value)}</span>`).join("")}</div>
+    <div class="theme-members">${members.length ? members.map(themeMemberRow).join("") : `<p class="empty">연결된 설정 종목이 없습니다.</p>`}</div>
+    <details class="theme-evidence"><summary>근거와 보류 조건</summary><div class="theme-evidence-grid"><section><h4>체크포인트 이전 재료</h4>${catalysts.length ? `<ul>${catalysts.map(item => `<li>${escapeHtml(item.title)}</li>`).join("")}</ul>` : `<p>분류 가능한 기사·공시 없음</p>`}</section><section><h4>보류·추격 위험</h4>${blockers.length ? `<ul>${blockers.slice(0,4).map(value => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : `<p>추가 보류 조건 없음</p>`}</section></div></details>
+  </article>`;
+}
+
+function renderThemeSupplyRadar(coach, gateLocked) {
+  const radar = coach?.theme_supply_radar || {};
+  const themes = radar?.themes || [];
+  const sources = radar?.source_availability || {};
+  const universe = radar?.universe || {};
+  const status = radar.availability === "available" ? "근거 수신" : (radar.availability === "partial" ? "일부 수신" : "데이터 없음");
+  $("themeRadarStatus").textContent = `${status} · Shadow 전용`;
+  $("themeRadarStatus").className = `badge ${radar.availability === "available" ? "fresh" : "warning-badge"}`;
+  $("themeRadarSummary").textContent = safeText(radar.summary, "테마·수급 근거를 확인하지 못했습니다.");
+  $("themeRadarScope").textContent = `설정 종목 ${fmtNum(universe.configured_symbol_count,0)}개 범위`;
+  const availableSources = [
+    sources.nxt_supply === "available" ? "NXT 수급" : null,
+    sources.theme_news_and_disclosures === "available" ? "기사·공시" : null,
+    sources.previous_us_market === "available" ? "전일 미국장" : null,
+    sources.weather_observation_or_forecast === "available" ? "날씨" : null
+  ].filter(Boolean);
+  $("themeRadarSources").textContent = availableSources.length ? `수신: ${availableSources.join(" · ")}` : "핵심 출처 미수신";
+  $("themeRadarGate").textContent = gateLocked ? `KOSPI Gate ${safeText(radar.kospi_gate_status,"UNAVAILABLE")} · 진입 잠금` : "Gate 통과 여부와 무관하게 검증 전 관찰만";
+  $("themeRadarEmpty").classList.toggle("hidden", themes.length > 0);
+  $("themeRadarList").innerHTML = themes.map(renderThemeCard).join("");
+}
+
 function renderDecisionCard(card, gateLocked=false, index=0) {
   const watch = (card?.why_watch || []).map(value => `<li>${escapeHtml(value)}</li>`).join("") || `<li>실데이터 수신 여부 확인</li>`;
   const risks = (card?.risk_factors || []).map(value => `<li>${escapeHtml(value)}</li>`).join("") || `<li>검증된 종목 확률 모델 없음</li>`;
   const displayAction = gateLocked ? "관찰만 · 진입 잠금" : safeText(card?.action_label, "조건 확인");
   const open = !gateLocked && index === 0 ? " open" : "";
+  const theme = card?.theme_supply || {};
+  const themeStrip = theme?.primary_theme ? `<div class="candidate-theme-strip"><span>${escapeHtml(theme.primary_theme)}</span><span>${escapeHtml(theme.role === "LEADER_OBSERVATION" ? "대장 관찰" : "후속 관찰")}</span><span>${escapeHtml(supplyStateLabel(theme.supply_state))}</span>${theme.chase_risk ? `<span class="chase-risk">추격 검토</span>` : ""}</div>` : "";
   return `<details class="decision-card${gateLocked ? " locked" : ""}"${open}>
     <summary><div class="decision-card-summary-main"><span class="rank">#${fmtNum(card?.candidate_rank,0)}</span><h3>${escapeHtml(card?.name)} <small>${escapeHtml(card?.symbol)}</small></h3></div><span class="action-state action-${escapeHtml(String(card?.action_state||"WAIT").toLowerCase())}">${escapeHtml(displayAction)}</span></summary>
     <div class="decision-card-body">
+    ${themeStrip}
     <div class="decision-meta"><span>관찰 점수 ${card?.observation_score == null ? "산출 불가" : `${fmtNum(card.observation_score,1)}점`}</span><span>완전성 ${fmtPct(card?.data_completeness,0)}</span><span>품질 ${escapeHtml(safeText(card?.data_quality,"불명"))}</span><span>확률 산출 불가</span></div>
     <div class="decision-columns">
       <section><h4>왜 주목하는가</h4><ul>${watch}</ul><h4 class="risk-title">위험 요인</h4><ul>${risks}</ul></section>
@@ -385,11 +454,16 @@ function renderDecisionCoach(data) {
   const marketGateAllowsEntries = Boolean(gate.stock_entries_allowed);
   const stockSignalEnabled = Boolean(signalGate.stock_signal_enabled);
   const gateLocked = !(marketGateAllowsEntries && stockSignalEnabled);
+  renderThemeSupplyRadar(coach, gateLocked);
   $("decisionPhase").textContent = safeText(phase.display, session.label);
   $("decisionPhaseDescription").textContent = session.description;
   const cards = coach?.decision_cards || [];
   const top = cards[0];
-  $("whatToWatch").textContent = top ? `${top.name} (${top.symbol}) · ${gateLocked ? "관찰만" : top.action_label}` : "설정된 종목 또는 실데이터 없음";
+  const topTheme = coach?.theme_supply_radar?.themes?.[0];
+  const topThemeMember = topTheme?.members?.[0];
+  $("whatToWatch").textContent = topTheme
+    ? `${topTheme.label}${topThemeMember ? ` · ${topThemeMember.name}` : ""} · 관찰 전용`
+    : top ? `${top.name} (${top.symbol}) · ${gateLocked ? "관찰만" : top.action_label}` : "설정된 종목 또는 실데이터 없음";
   $("whenToEnter").textContent = gateLocked ? `KOSPI Gate ${safeText(gate.status,"UNAVAILABLE")} 해제 전 신규 진입 보류` : (top?.entry_window || "09:05 완성 데이터 확인 후 조건부 검토");
   $("whenToExit").textContent = top?.invalidation_conditions?.[0]?.label || "진입 논리와 구조적 기준 재확인";
   const checks = coach?.market_environment?.top_checks || [];

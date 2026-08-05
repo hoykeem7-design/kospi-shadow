@@ -293,6 +293,13 @@ def _news_impact(title: str) -> tuple[str, list[str]]:
     for tag, words in {
         "미국": ("미국", "연준", "fomc", "나스닥", "다우"),
         "반도체": ("반도체", "엔비디아", "삼성전자", "sk하이닉스"),
+        "2차전지": ("2차전지", "이차전지", "배터리", "전기차", "리튬"),
+        "폭염·냉방": ("폭염", "무더위", "열대야", "냉방", "에어컨", "제습기"),
+        "방산": ("방산", "방위산업", "무기", "미사일"),
+        "조선": ("조선", "선박", "lng선", "해운"),
+        "원전": ("원전", "원자력", "smr", "전력망"),
+        "로봇": ("로봇", "휴머노이드", "자동화"),
+        "바이오": ("바이오", "신약", "임상", "헬스케어"),
         "환율": ("환율", "원달러", "달러"),
         "금리": ("금리", "채권", "국채"),
         "정책": ("정부", "세제", "관세", "규제"),
@@ -790,8 +797,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
     )
     decision_coach["official_disclosure"] = disclosure_status
     dashboard = {
-        "schema_version": 5,
-        "app_version": "5.2.0",
+        "schema_version": 6,
+        "app_version": "5.3.0",
         "build_sha": os.getenv("GITHUB_SHA") or None,
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {

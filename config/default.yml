@@ -82,6 +82,19 @@ decision_coach:
     selective_probability: 0.54
     risk_off_probability: 0.43
     maximum_ledger_records: 5000
+  # Observation-only theme discovery. These are presentation and safety
+  # heuristics, not validated probabilities or trading-rule weights.
+  theme_supply_radar:
+    mode: shadow_only
+    maximum_themes: 3
+    maximum_members_per_theme: 3
+    minimum_theme_members: 2
+    minimum_breadth_ratio: 0.60
+    maximum_nxt_return_before_chase_review: 0.08
+    maximum_opening_return_before_chase_review: 0.05
+    maximum_ledger_records: 5000
+    validation_horizons_minutes: [5, 15, 30]
+    themes: []
   signal_gate:
     require_walk_forward_validation: true
     require_no_future_leakage: true

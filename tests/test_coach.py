@@ -196,11 +196,12 @@ def test_generated_dashboard_keeps_old_fields_and_adds_v5_schema(monkeypatch, tm
     dashboard = coach.generate_coach_app(
         settings, tmp_path, now_seoul=datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL)
     )
-    assert dashboard["schema_version"] == 5
-    assert dashboard["app_version"] == "5.2.0"
+    assert dashboard["schema_version"] == 6
+    assert dashboard["app_version"] == "5.3.0"
     assert "prediction" in dashboard
     assert "premarket_experiment" in dashboard
     assert dashboard["decision_coach_v5"]["phase"]["phase"] == "entry_decision"
     assert dashboard["decision_coach_v5"]["signal_gate"]["probability"] is None
     assert dashboard["decision_coach_v5"]["kospi_market_gate"]["status"] == "UNAVAILABLE"
+    assert dashboard["decision_coach_v5"]["theme_supply_radar"]["entry_signal_enabled"] is False
     assert (tmp_path / "site" / "data" / "dashboard.json").is_file()

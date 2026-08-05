@@ -306,13 +306,16 @@ def test_full_v5_response_has_integrity_gate_and_unavailable_aftermarket(tmp_pat
         index_signal_enabled=True,
         persist_history=False,
     )
-    assert result["feature_name"] == "time_based_decision_coach_v5"
+    assert result["feature_name"] == "time_based_decision_coach_v5_3"
     assert result["signal_gate"]["stock_signal_enabled"] is False
     assert result["signal_gate"]["probability"] is None
     assert result["entry_candidates"] == []
     assert result["nxt_aftermarket"]["availability"] == "unavailable"
     assert result["next_day_watchlist"] == []
     assert result["integrity"]["future_news_cutoff_applied"] is True
+    assert result["theme_supply_radar"]["entry_signal_enabled"] is False
+    assert result["theme_supply_radar"]["probability"] is None
+    assert result["decision_cards"][0]["theme_supply"]["observation_only"] is True
 
 
 def test_aftermarket_gap_uses_real_krx_close_and_missing_baseline_stays_null():
@@ -406,6 +409,9 @@ def test_stock_signal_is_subordinate_to_kospi_market_gate(tmp_path: Path):
     assert result["signal_gate"]["stock_signal_depends_on_kospi_gate"] is True
     assert result["signal_gate"]["stock_signal_enabled"] is False
     assert result["decision_cards"][0]["blocked_by_kospi_gate"] is True
+    assert result["theme_supply_radar"]["depends_on_kospi_gate"] is True
+    assert result["theme_supply_radar"]["entry_signal_enabled"] is False
+    assert result["integrity"]["theme_radar_can_override_kospi_gate"] is False
     assert result["entry_candidates"] == []
 
 
@@ -416,6 +422,7 @@ def test_pwa_contains_no_direct_recommendation_and_has_data_lab():
     assert "매수 추천" not in app_js
     assert "매수 추천" not in index
     assert 'id="data-lab"' in index
+    assert 'id="theme-supply-radar"' in index
     assert "screenRefreshButton" in app_js
 
 
