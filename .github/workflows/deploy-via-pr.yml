@@ -1,0 +1,161 @@
+name: Deploy KOSPI App via PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy-via-pr.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kospi-shadow-pr-netlify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-production:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      PRODUCTION_URL: https://joyful-crostata-e96663.netlify.app
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+
+      - name: Verify deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN" || { echo "NETLIFY_AUTH_TOKEN is missing"; exit 2; }
+          test -n "$NETLIFY_SITE_ID" || { echo "NETLIFY_SITE_ID is missing"; exit 2; }
+          echo "Deploying head SHA: $EXPECTED_SHA"
+
+      - name: Build latest app shell with last production data
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site outputs
+          mkdir -p site/data outputs
+          cp -R app/. site/
+
+          curl --fail --silent --show-error \
+            --retry 4 --retry-delay 3 \
+            -H "Cache-Control: no-cache" \
+            "$PRODUCTION_URL/data/dashboard.json?source_sha=$EXPECTED_SHA" \
+            -o outputs/production-dashboard.json
+
+          curl --fail --silent --show-error \
+            --retry 2 --retry-delay 2 \
+            -H "Cache-Control: no-cache" \
+            "$PRODUCTION_URL/data/history.json?source_sha=$EXPECTED_SHA" \
+            -o site/data/history.json \
+            || printf '[]\n' > site/data/history.json
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          dashboard = json.loads(Path("outputs/production-dashboard.json").read_text(encoding="utf-8"))
+          previous_generated_at = dashboard.get("generated_at_seoul")
+          dashboard["app_version"] = "5.3.1"
+          dashboard["build_sha"] = os.environ["EXPECTED_SHA"]
+          dashboard["app_shell_deployment"] = {
+              "mode": "shell_only",
+              "updated_at_seoul": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
+              "source_generated_at_seoul": previous_generated_at,
+              "source": "last_successful_production_snapshot",
+          }
+          quality = dashboard.setdefault("data_quality", {})
+          warnings = list(quality.get("warnings") or [])
+          notice = "앱 화면은 최신 커밋으로 갱신됐으며 시장 데이터는 마지막 정상 스냅샷을 유지합니다."
+          if notice not in warnings:
+              warnings.append(notice)
+          quality["warnings"] = warnings
+
+          Path("site/data/dashboard.json").write_text(
+              json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          escaped = json.dumps(dashboard, ensure_ascii=False).replace("</", "<\\/")
+          Path("site/data/initial-data.js").write_text(
+              f"window.__INITIAL_DASHBOARD__ = {escaped};\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Validate deploy package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/sw.js
+          test -f site/_headers
+          test -f site/data/dashboard.json
+          test -f site/data/initial-data.js
+          node --check site/app.js
+          node --check site/sw.js
+          grep -q "v5.3.1" site/index.html
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          assert dashboard.get("app_version") == "5.3.1", dashboard.get("app_version")
+          assert dashboard.get("build_sha") == os.environ["EXPECTED_SHA"], dashboard.get("build_sha")
+          PY
+
+      - name: Deploy to Netlify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes netlify-cli@26.2.0 deploy \
+            --prod \
+            --no-build \
+            --dir=site \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --message="KOSPI PR app shell $EXPECTED_SHA" \
+            --timeout=10m \
+            --json | tee outputs/netlify-deploy.json
+
+      - name: Verify live production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          verified=0
+          for attempt in $(seq 1 24); do
+            curl --fail --silent --show-error \
+              --retry 2 --retry-delay 2 \
+              -H "Cache-Control: no-cache" \
+              "$PRODUCTION_URL/index.html?sha=$EXPECTED_SHA&attempt=$attempt" \
+              -o outputs/live-index.html || true
+            curl --fail --silent --show-error \
+              --retry 2 --retry-delay 2 \
+              -H "Cache-Control: no-cache" \
+              "$PRODUCTION_URL/data/dashboard.json?sha=$EXPECTED_SHA&attempt=$attempt" \
+              -o outputs/live-dashboard.json || true
+            if grep -q "v5.3.1" outputs/live-index.html 2>/dev/null; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")' 2>/dev/null || true)
+              if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
