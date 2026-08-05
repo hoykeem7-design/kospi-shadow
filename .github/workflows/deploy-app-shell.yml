@@ -1,0 +1,194 @@
+name: Deploy KOSPI App Shell
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy-app-shell.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kospi-shadow-netlify-app-shell
+  cancel-in-progress: true
+
+jobs:
+  deploy-app-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Netlify deployment secrets
+        shell: bash
+        run: |
+          test -n "$NETLIFY_AUTH_TOKEN" || { echo "NETLIFY_AUTH_TOKEN is missing"; exit 2; }
+          test -n "$NETLIFY_SITE_ID" || { echo "NETLIFY_SITE_ID is missing"; exit 2; }
+
+      - name: Build latest app shell with last production snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site/data outputs
+          cp -R app/. site/
+
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" \
+            -o outputs/netlify-site.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          site = json.loads(Path("outputs/netlify-site.json").read_text(encoding="utf-8"))
+          url = site.get("ssl_url") or site.get("url")
+          if not url:
+              raise SystemExit(f"Netlify site response has no public URL: {site}")
+          Path("outputs/production-url.txt").write_text(url.rstrip("/"), encoding="utf-8")
+          PY
+
+          production_url="$(cat outputs/production-url.txt)"
+          curl --fail --silent --show-error \
+            -H "Cache-Control: no-cache" \
+            "$production_url/data/dashboard.json?source_sha=$GITHUB_SHA" \
+            -o outputs/production-dashboard.json
+
+          curl --fail --silent --show-error \
+            -H "Cache-Control: no-cache" \
+            "$production_url/data/history.json?source_sha=$GITHUB_SHA" \
+            -o site/data/history.json \
+            || printf '[]\n' > site/data/history.json
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          source = Path("outputs/production-dashboard.json")
+          dashboard = json.loads(source.read_text(encoding="utf-8"))
+          previous_generated_at = dashboard.get("generated_at_seoul")
+          dashboard["app_version"] = "5.3.1"
+          dashboard["build_sha"] = os.environ["GITHUB_SHA"]
+          dashboard["app_shell_deployment"] = {
+              "mode": "shell_only",
+              "updated_at_seoul": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
+              "source_generated_at_seoul": previous_generated_at,
+              "source": "last_successful_production_snapshot",
+          }
+          quality = dashboard.setdefault("data_quality", {})
+          warnings = list(quality.get("warnings") or [])
+          notice = "앱 화면은 최신 커밋으로 갱신됐으며 시장 데이터는 마지막 정상 스냅샷을 유지합니다."
+          if notice not in warnings:
+              warnings.append(notice)
+          quality["warnings"] = warnings
+
+          Path("site/data/dashboard.json").write_text(
+              json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          escaped = json.dumps(dashboard, ensure_ascii=False).replace("</", "<\\/")
+          Path("site/data/initial-data.js").write_text(
+              f"window.__INITIAL_DASHBOARD__ = {escaped};\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Validate app shell package
+        shell: bash
+        run: |
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/sw.js
+          test -f site/_headers
+          test -f site/data/dashboard.json
+          test -f site/data/initial-data.js
+          node --check site/app.js
+          node --check site/sw.js
+          grep -q "v5.3.1" site/index.html
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          if dashboard.get("app_version") != "5.3.1":
+              raise SystemExit(f"unexpected app version: {dashboard.get('app_version')}")
+          if dashboard.get("build_sha") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("app shell build SHA mismatch")
+          PY
+
+      - name: Deploy app shell to Netlify production
+        shell: bash
+        run: |
+          npx --yes netlify-cli@26.2.0 deploy \
+            --prod \
+            --no-build \
+            --dir=site \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --message="KOSPI app shell $GITHUB_SHA" \
+            --timeout=10m \
+            --json | tee outputs/netlify-shell-deploy.json
+
+      - name: Verify production app shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          production_url="$(cat outputs/production-url.txt)"
+          verified=0
+          for attempt in $(seq 1 18); do
+            if curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "$production_url/index.html?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/live-index.html \
+              && curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "$production_url/data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/live-dashboard.json; then
+              if grep -q "v5.3.1" outputs/live-index.html \
+                && python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("outputs/live-dashboard.json").read_text(encoding="utf-8"))
+          raise SystemExit(0 if dashboard.get("build_sha") == os.environ["GITHUB_SHA"] else 1)
+          PY
+              then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
+
+      - name: Publish deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Independent app-shell deployment"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Expected app version: v5.3.1"
+            if [ -f outputs/production-url.txt ]; then
+              echo "- Production URL: $(cat outputs/production-url.txt)"
+            fi
+            if [ -f outputs/netlify-shell-deploy.json ]; then
+              echo '```json'
+              cat outputs/netlify-shell-deploy.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
