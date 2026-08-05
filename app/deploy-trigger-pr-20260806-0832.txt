@@ -6,3 +6,4 @@ Resolved-site retry at: 2026-08-06T08:41:00+09:00
 Configuration inspection at: 2026-08-06T08:44:00+09:00
 Build API retry at: 2026-08-06T08:47:00+09:00
 Fixed build API retry at: 2026-08-06T08:50:00+09:00
+GitHub Pages fallback at: 2026-08-06T08:53:00+09:00
