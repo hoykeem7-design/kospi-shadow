@@ -3,10 +3,25 @@
   Netlify-CDN-Cache-Control: no-store
 
 /index.html
-  Cache-Control: no-cache, max-age=0, must-revalidate
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
+
+/app.js
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
+
+/styles.css
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
+
+/manifest.webmanifest
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
 
 /sw.js
-  Cache-Control: no-cache, max-age=0, must-revalidate
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
 
 /
-  Cache-Control: no-cache, max-age=0, must-revalidate
+  Cache-Control: no-store, no-cache, max-age=0, must-revalidate
+  Netlify-CDN-Cache-Control: no-store
