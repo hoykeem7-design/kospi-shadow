@@ -1,4 +1,4 @@
-# Decision Coach v5.3 architecture and operating truth
+# Decision Coach v5.3.1 architecture and operating truth
 
 ## Theme & Supply Radar v5.3
 
@@ -7,6 +7,10 @@
 테마별 출력은 기사·공시 빈도 프록시, 구성 종목 수, 상승 종목 비율, 상대거래대금·상대거래량 중앙값, 전일 NASDAQ/SOX 정렬, 전일 종가 기준, 날씨 데이터 가용성, 대장/후속 관찰 순서와 추격 위험을 분리합니다. 포털 조회수·검색순위는 연결되지 않았고 기사 빈도로 대체하지 않습니다. 직접 날씨 관측·예보가 없으면 날씨 기사는 `news_proxy`로만 표시합니다.
 
 레이더는 `mode=shadow_only`, `entry_signal_enabled=false`, `probability=null`이며 KOSPI Gate를 우회하지 못합니다. 07:30·08:00·08:50·09:05 스냅샷은 `app_state/theme_supply_radar.jsonl`에 저장되며 5·15·30분 결과 필드는 검증 데이터가 생기기 전까지 `null`입니다.
+
+### v5.3.1 market-attention coverage
+
+KIS `volume-rank`에서 거래대금·거래량 증가 상위 KOSPI 종목 일부를 수신합니다. 이 값은 포털 조회수나 검색순위가 아닙니다. 명시적인 테마 종목표는 실제 수신된 순위 종목과 교차하고, Open-Meteo 서울 모델 예보는 날씨 사건 문맥으로만 사용합니다. 학습되지 않은 현재→종가·종목 확률은 휴리스틱으로 채우지 않고 계속 `null`로 둡니다.
 
 ## Decision-first PWA v5.2
 

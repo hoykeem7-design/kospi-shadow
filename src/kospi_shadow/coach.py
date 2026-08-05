@@ -30,8 +30,11 @@ KIS_INDEX_PRICE_ENDPOINT = "/uapi/domestic-stock/v1/quotations/inquire-index-pri
 KIS_INDEX_PRICE_TR_ID = "FHPUP02100000"
 KIS_FUTURES_BOARD_ENDPOINT = "/uapi/domestic-futureoption/v1/quotations/display-board-futures"
 KIS_FUTURES_BOARD_TR_ID = "FHPIF05030200"
+KIS_VOLUME_RANK_ENDPOINT = "/uapi/domestic-stock/v1/quotations/volume-rank"
+KIS_VOLUME_RANK_TR_ID = "FHPST01710000"
 FRED_RELEASE_DATES_ENDPOINT = "https://api.stlouisfed.org/fred/releases/dates"
 OPENDART_LIST_ENDPOINT = "https://opendart.fss.or.kr/api/list.json"
+OPEN_METEO_FORECAST_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
 
 
 @dataclass(frozen=True)
@@ -219,6 +222,182 @@ def fetch_kis_futures_snapshot(*, timeout: int, retries: int, token: str | None 
     }
 
 
+def _market_attention_session(now_seoul: datetime) -> str | None:
+    current = now_seoul.astimezone(SEOUL) if now_seoul.tzinfo else now_seoul.replace(tzinfo=SEOUL)
+    value = current.timetz().replace(tzinfo=None)
+    if dtime(8, 0) <= value < dtime(9, 0) or dtime(15, 40) <= value < dtime(20, 0):
+        return "NX"
+    if dtime(9, 0) <= value < dtime(15, 40):
+        return "J"
+    return None
+
+
+def fetch_kis_market_attention(
+    *,
+    now_seoul: datetime,
+    timeout: int,
+    retries: int,
+    token: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Fetch KIS transaction-value and volume-growth rankings.
+
+    This is exchange activity, not portal views/search interest, and it never
+    becomes an entry signal by itself.
+    """
+    market_code = _market_attention_session(now_seoul)
+    if market_code is None:
+        return {
+            "availability": "unavailable",
+            "unavailable_reason": "market_ranking_outside_active_session",
+            "leaders": [],
+            "direct_query_rank_available": False,
+            "trading_signal": False,
+        }
+    token = token or fetch_kis_access_token(timeout=timeout, retries=retries)
+    ranking_rows: dict[str, list[dict[str, Any]]] = {}
+    for ranking_key, ranking_code in (("turnover", "3"), ("volume_growth", "1")):
+        response = _retry_get(
+            f"{KIS_BASE_URL}{KIS_VOLUME_RANK_ENDPOINT}",
+            params={
+                "FID_COND_MRKT_DIV_CODE": market_code,
+                "FID_COND_SCR_DIV_CODE": "20171",
+                "FID_INPUT_ISCD": "0001" if market_code == "J" else "0000",
+                "FID_DIV_CLS_CODE": "1",
+                "FID_BLNG_CLS_CODE": ranking_code,
+                "FID_TRGT_CLS_CODE": "111111111",
+                "FID_TRGT_EXLS_CLS_CODE": "0000000000",
+                "FID_INPUT_PRICE_1": "0",
+                "FID_INPUT_PRICE_2": "1000000",
+                "FID_VOL_CNT": "0",
+                "FID_INPUT_DATE_1": "",
+            },
+            headers=_common_kis_headers(token, KIS_VOLUME_RANK_TR_ID),
+            timeout=timeout,
+            retries=retries,
+        )
+        payload = response.json()
+        if str(payload.get("rt_cd", "")) != "0":
+            raise RuntimeError(
+                f"KIS volume rank failed [{payload.get('msg_cd', '')}]: {payload.get('msg1', '')}"
+            )
+        rows = payload.get("output") or []
+        ranking_rows[ranking_key] = rows if isinstance(rows, list) else []
+
+    leaders: dict[str, dict[str, Any]] = {}
+    received_at = datetime.now(SEOUL).isoformat()
+    for ranking_key, rows in ranking_rows.items():
+        for fallback_rank, row in enumerate(rows[: max(1, int(limit))], 1):
+            symbol = str(row.get("mksc_shrn_iscd") or "").strip()
+            if len(symbol) != 6 or not symbol.isdigit():
+                continue
+            item = leaders.setdefault(symbol, {
+                "symbol": symbol,
+                "name": str(row.get("hts_kor_isnm") or symbol).strip(),
+                "current_price": _safe_float(row.get("stck_prpr")),
+                "current_return": _pct(row.get("prdy_ctrt")),
+                "cumulative_volume": _safe_float(row.get("acml_vol")),
+                "cumulative_turnover": _safe_float(row.get("acml_tr_pbmn")),
+                "volume_growth_rate": _pct(row.get("vol_inrt")),
+                "turnover_rotation_rate": _pct(row.get("tr_pbmn_tnrt")),
+                "ranks": {},
+                "ranking_sources": [],
+                "observed_at": received_at,
+                "data_quality": "good",
+                "source": f"KIS {'NXT' if market_code == 'NX' else 'KRX'} volume-rank",
+                "trading_signal": False,
+            })
+            rank = int(_safe_float(row.get("data_rank")) or fallback_rank)
+            item["ranks"][ranking_key] = rank
+            item["ranking_sources"].append(ranking_key)
+            for field, raw_name, parser in (
+                ("current_price", "stck_prpr", _safe_float),
+                ("current_return", "prdy_ctrt", _pct),
+                ("cumulative_volume", "acml_vol", _safe_float),
+                ("cumulative_turnover", "acml_tr_pbmn", _safe_float),
+                ("volume_growth_rate", "vol_inrt", _pct),
+                ("turnover_rotation_rate", "tr_pbmn_tnrt", _pct),
+            ):
+                value = parser(row.get(raw_name))
+                if value not in (None, ""):
+                    item[field] = value
+    for item in leaders.values():
+        current_price = _safe_float(item.get("current_price"))
+        current_return = _safe_float(item.get("current_return"))
+        item["previous_close"] = (
+            current_price / (1.0 + current_return)
+            if current_price is not None and current_return is not None and current_return != -1.0
+            else None
+        )
+    ordered = sorted(
+        leaders.values(),
+        key=lambda row: (
+            (row.get("ranks") or {}).get("turnover", 10_000),
+            (row.get("ranks") or {}).get("volume_growth", 10_000),
+            -(row.get("cumulative_turnover") or 0),
+            row.get("symbol"),
+        ),
+    )[: max(1, int(limit))]
+    return {
+        "availability": "available" if ordered else "unavailable",
+        "unavailable_reason": None if ordered else "market_ranking_returned_no_rows",
+        "market": "NXT" if market_code == "NX" else "KRX",
+        "scope": "KOSPI common-stock ranking slice" if market_code == "J" else "NXT common-stock ranking slice",
+        "source": "KIS volume-rank",
+        "observed_at": received_at,
+        "leaders": ordered,
+        "direct_query_rank_available": False,
+        "note": "포털 조회수가 아니라 실제 거래대금·거래량 증가 순위입니다.",
+        "trading_signal": False,
+    }
+
+
+def fetch_weather_snapshot(*, timeout: int, retries: int, config: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = config or {}
+    response = _retry_get(
+        OPEN_METEO_FORECAST_ENDPOINT,
+        params={
+            "latitude": float(cfg.get("latitude", 37.5665)),
+            "longitude": float(cfg.get("longitude", 126.9780)),
+            "timezone": "Asia/Seoul",
+            "current": "temperature_2m,apparent_temperature",
+            "daily": "temperature_2m_max,apparent_temperature_max,weather_code",
+            "forecast_days": 1,
+        },
+        headers={"User-Agent": "KOSPI-Shadow-Coach/5.3"},
+        timeout=timeout,
+        retries=retries,
+    )
+    payload = response.json()
+    current = payload.get("current") or {}
+    daily = payload.get("daily") or {}
+    maximums = daily.get("temperature_2m_max") or []
+    apparent_maximums = daily.get("apparent_temperature_max") or []
+    weather_codes = daily.get("weather_code") or []
+    temperature = _safe_float(current.get("temperature_2m"))
+    maximum = _safe_float(maximums[0]) if maximums else None
+    if temperature is None and maximum is None:
+        raise RuntimeError("Open-Meteo returned no usable Seoul temperature")
+    return {
+        "availability": "available",
+        "location": str(cfg.get("label") or "서울"),
+        "source": "Open-Meteo best-match forecast",
+        "observed_at": current.get("time"),
+        "received_at": datetime.now(SEOUL).isoformat(),
+        "temperature_c": temperature,
+        "apparent_temperature_c": _safe_float(current.get("apparent_temperature")),
+        "maximum_temperature_c": maximum,
+        "maximum_apparent_temperature_c": _safe_float(apparent_maximums[0]) if apparent_maximums else None,
+        "temperature_anomaly_c": None,
+        "weather_code": _safe_float(weather_codes[0]) if weather_codes else None,
+        "alerts": [],
+        "official_warning_available": False,
+        "data_quality": "forecast_model",
+        "trading_signal": False,
+        "note": "서울 모델 예보이며 기상청 특보가 아닙니다. 날씨 단독 매매 신호로 쓰지 않습니다.",
+    }
+
+
 def _latest_cache_snapshot(cache_dir: Path, key: str) -> dict[str, Any] | None:
     candidates = [cache_dir / f"yahoo_{key}.csv", cache_dir / f"fred_{key}.csv"]
     path = next((p for p in candidates if p.exists()), None)
@@ -311,6 +490,18 @@ def _news_impact(title: str) -> tuple[str, list[str]]:
     return impact, tags[:3]
 
 
+def _strip_publisher_suffix(title: str, source: str) -> str:
+    cleaned = str(title or "").strip()
+    publisher = str(source or "").strip()
+    if not publisher:
+        return cleaned
+    for separator in (" - ", " | ", " · "):
+        suffix = f"{separator}{publisher}"
+        if cleaned.endswith(suffix):
+            return cleaned[:-len(suffix)].rstrip()
+    return cleaned
+
+
 def fetch_market_news(*, query: str, limit: int, timeout: int, retries: int) -> list[dict[str, Any]]:
     url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=ko&gl=KR&ceid=KR:ko"
     response = _retry_get(
@@ -326,7 +517,7 @@ def fetch_market_news(*, query: str, limit: int, timeout: int, retries: int) -> 
         link = (node.findtext("link") or "").strip()
         source_node = node.find("source")
         source = (source_node.text or "").strip() if source_node is not None else ""
-        impact, tags = _news_impact(title)
+        impact, tags = _news_impact(_strip_publisher_suffix(title, source))
         items.append({
             "title": title,
             "link": link,
@@ -660,6 +851,18 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
     warnings: list[str] = []
     index: dict[str, Any] | None = None
     futures: dict[str, Any] | None = None
+    market_attention: dict[str, Any] = {
+        "availability": "unavailable",
+        "unavailable_reason": "kis_market_attention_not_received",
+        "leaders": [],
+        "direct_query_rank_available": False,
+        "trading_signal": False,
+    }
+    weather: dict[str, Any] = {
+        "availability": "unavailable",
+        "unavailable_reason": "weather_forecast_not_received",
+        "trading_signal": False,
+    }
 
     try:
         token = fetch_kis_access_token(timeout=timeout, retries=retries)
@@ -685,8 +888,27 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
             })
         except Exception as exc:
             warnings.append(f"KIS futures snapshot: {exc}")
+        try:
+            market_attention = fetch_kis_market_attention(
+                now_seoul=now_seoul,
+                timeout=timeout,
+                retries=retries,
+                token=token,
+                limit=int(coach_cfg.get("market_attention_limit", 20)),
+            )
+        except Exception as exc:
+            warnings.append(f"KIS market attention: {exc}")
     except Exception as exc:
         warnings.append(f"KIS token: {exc}")
+
+    try:
+        weather = fetch_weather_snapshot(
+            timeout=timeout,
+            retries=max(1, min(retries, 2)),
+            config=coach_cfg.get("weather") or {},
+        )
+    except Exception as exc:
+        warnings.append(f"Weather forecast: {exc}")
 
     cache_dir = project_root / str(data_cfg.get("cache_dir", "data/cache"))
     factors = collect_factor_snapshots(cache_dir)
@@ -734,6 +956,16 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         }
         warnings.append("Two-stage premarket experiment: unavailable")
 
+    attention_names = {
+        str(item.get("symbol") or ""): str(item.get("name") or "")
+        for item in market_attention.get("leaders") or []
+        if item.get("symbol") and item.get("name")
+    }
+    for item in premarket_experiment.get("symbols") or []:
+        symbol = str(item.get("symbol") or "")
+        if symbol and (not item.get("name") or item.get("name") == symbol) and attention_names.get(symbol):
+            item["name"] = attention_names[symbol]
+
     configured_stock_symbols = [
         str(item.get("symbol")) for item in premarket_experiment.get("symbols") or []
         if item.get("symbol")
@@ -772,6 +1004,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
         "kospi": index,
         "kospi200_futures": futures,
         "factors": factors,
+        "stock_attention": market_attention,
+        "weather": weather,
     }
     validation_payload = {
         "roc_auc": metrics.get("classification", {}).get("roc_auc"),
@@ -797,8 +1031,8 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
     )
     decision_coach["official_disclosure"] = disclosure_status
     dashboard = {
-        "schema_version": 6,
-        "app_version": "5.3.0",
+        "schema_version": 7,
+        "app_version": "5.3.1",
         "build_sha": os.getenv("GITHUB_SHA") or None,
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {

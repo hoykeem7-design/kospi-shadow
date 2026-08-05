@@ -132,10 +132,23 @@ def _theme_definitions(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _news_text(item: dict[str, Any]) -> str:
+    original_title = str(item.get("title") or "").strip()
+    title = original_title
+    source_name = str(item.get("source_name") or "").strip()
+    if source_name:
+        for separator in (" - ", " | ", " · "):
+            suffix = f"{separator}{source_name}"
+            if title.endswith(suffix):
+                title = title[:-len(suffix)].rstrip()
+                break
+    theme_tags = list(item.get("theme_tags") or [])
+    if title != original_title:
+        cleaned_lower = title.lower()
+        theme_tags = [tag for tag in theme_tags if str(tag or "").lower() in cleaned_lower]
     values = [
-        item.get("title"),
+        title,
         item.get("material_type"),
-        *(item.get("theme_tags") or []),
+        *theme_tags,
     ]
     return " ".join(str(value or "").lower() for value in values)
 
@@ -159,6 +172,7 @@ def _member_observation(symbol: dict[str, Any]) -> dict[str, Any]:
     pre = symbol.get("premarket_summary") or {}
     auction = symbol.get("opening_auction_summary") or {}
     opening = symbol.get("opening_five_minute_summary") or {}
+    attention = symbol.get("market_attention_summary") or {}
     pre_return = _finite(pre.get("nxt_return"))
     opening_return = _finite(opening.get("first_5m_return"))
     if opening_return is None:
@@ -166,9 +180,20 @@ def _member_observation(symbol: dict[str, Any]) -> dict[str, Any]:
         actual_open = _finite(opening.get("actual_open"))
         if current is not None and actual_open not in (None, 0):
             opening_return = current / actual_open - 1.0
-    active_return = opening_return if opening.get("data_complete") and opening_return is not None else pre_return
+    market_return = _finite(attention.get("current_return"))
+    active_return = (
+        opening_return
+        if opening.get("data_complete") and opening_return is not None
+        else (pre_return if pre_return is not None else market_return)
+    )
     relative_turnover = _relative(pre, "relative_turnover")
     relative_volume = _relative(pre, "relative_volume")
+    cumulative_turnover = _finite(pre.get("cumulative_turnover"))
+    if cumulative_turnover is None:
+        cumulative_turnover = _finite(attention.get("cumulative_turnover"))
+    previous_close = _finite(pre.get("previous_close"))
+    if previous_close is None:
+        previous_close = _finite(attention.get("previous_close"))
     return {
         "symbol": str(symbol.get("symbol") or ""),
         "name": str(symbol.get("name") or symbol.get("symbol") or ""),
@@ -176,20 +201,32 @@ def _member_observation(symbol: dict[str, Any]) -> dict[str, Any]:
         "role_is_inferred": True,
         "nxt_return": pre_return,
         "opening_five_minute_return": opening_return,
+        "market_return": market_return,
         "active_return": active_return,
         "positive": active_return > 0 if active_return is not None else None,
-        "cumulative_turnover": _finite(pre.get("cumulative_turnover")),
+        "previous_close": previous_close,
+        "cumulative_turnover": cumulative_turnover,
         "relative_turnover": relative_turnover,
         "relative_volume": relative_volume,
+        "volume_growth_rate": _finite(attention.get("volume_growth_rate")),
+        "market_attention_ranks": deepcopy(attention.get("ranks") or {}),
+        "market_attention_sources": list(attention.get("ranking_sources") or []),
         "above_approximate_vwap": (
             (_finite(opening.get("current_vs_approximate_vwap")) or 0) > 0
             if _finite(opening.get("current_vs_approximate_vwap")) is not None
             else None
         ),
         "auction_direction_matches_nxt": auction.get("direction_matches_nxt"),
-        "observed_at": opening.get("observed_at") or pre.get("observed_at"),
-        "data_quality": opening.get("data_quality") if opening.get("data_complete") else pre.get("data_quality", "unavailable"),
-        "supply_available": any(value is not None for value in (relative_turnover, relative_volume, active_return)),
+        "observed_at": opening.get("observed_at") or pre.get("observed_at") or attention.get("observed_at"),
+        "data_quality": (
+            opening.get("data_quality")
+            if opening.get("data_complete")
+            else (pre.get("data_quality") if pre else attention.get("data_quality", "unavailable"))
+        ),
+        "supply_available": any(
+            value is not None
+            for value in (relative_turnover, relative_volume, active_return, cumulative_turnover)
+        ),
     }
 
 
@@ -240,11 +277,15 @@ def _weather_evidence(definition: dict[str, Any], matched_news: list[dict[str, A
         return {
             "availability": "available",
             "source": weather.get("source"),
+            "location": weather.get("location"),
             "observed_at": weather.get("observed_at"),
             "temperature_c": _finite(weather.get("temperature_c")),
+            "apparent_temperature_c": _finite(weather.get("apparent_temperature_c")),
             "maximum_temperature_c": _finite(weather.get("maximum_temperature_c")),
+            "maximum_apparent_temperature_c": _finite(weather.get("maximum_apparent_temperature_c")),
             "temperature_anomaly_c": _finite(weather.get("temperature_anomaly_c")),
             "alerts": list(weather.get("alerts") or []),
+            "official_warning_available": bool(weather.get("official_warning_available")),
             "trading_signal": False,
             "note": "날씨는 재료 확인용이며 단독 매매 신호가 아닙니다.",
         }
@@ -315,8 +356,30 @@ def build_theme_supply_radar(
     """
     cfg = config or {}
     current = _seoul(now)
-    symbol_rows = [deepcopy(row) for row in symbols]
-    symbol_lookup = {str(row.get("symbol") or ""): row for row in symbol_rows if row.get("symbol")}
+    configured_symbol_rows = [deepcopy(row) for row in symbols]
+    symbol_lookup = {
+        str(row.get("symbol") or ""): row
+        for row in configured_symbol_rows
+        if row.get("symbol")
+    }
+    market_attention = deepcopy(market.get("stock_attention") or {})
+    attention_leaders = [
+        row for row in market_attention.get("leaders") or []
+        if isinstance(row, dict) and row.get("symbol")
+    ]
+    for leader in attention_leaders:
+        symbol = str(leader.get("symbol") or "")
+        existing = symbol_lookup.get(symbol)
+        if existing is None:
+            existing = {
+                "symbol": symbol,
+                "name": str(leader.get("name") or symbol),
+            }
+            symbol_lookup[symbol] = existing
+        elif (not existing.get("name") or existing.get("name") == symbol) and leader.get("name"):
+            existing["name"] = str(leader["name"])
+        existing["market_attention_summary"] = deepcopy(leader)
+    symbol_rows = list(symbol_lookup.values())
     news_rows = [deepcopy(row) for row in news]
     definitions = _theme_definitions(cfg)
     minimum_members = max(2, int(cfg.get("minimum_theme_members", 2)))
@@ -324,6 +387,7 @@ def build_theme_supply_radar(
     maximum_nxt_return = max(0.0, float(cfg.get("maximum_nxt_return_before_chase_review", 0.08)))
     maximum_opening_return = max(0.0, float(cfg.get("maximum_opening_return_before_chase_review", 0.05)))
     maximum_members = max(1, int(cfg.get("maximum_members_per_theme", 3)))
+    weather_heat_threshold = float(cfg.get("weather_heat_threshold_c", 30.0))
     themes: list[dict[str, Any]] = []
 
     for definition in definitions:
@@ -332,7 +396,21 @@ def build_theme_supply_radar(
         for item in matched_news:
             member_symbols.update(str(value) for value in item.get("related_symbols") or [] if value)
         members = [_member_observation(symbol_lookup[symbol]) for symbol in sorted(member_symbols) if symbol in symbol_lookup]
-        if not matched_news and not members:
+        weather = _weather_evidence(definition, matched_news, market)
+        weather_maximums = [
+            value for value in (
+                _finite(weather.get("maximum_temperature_c")),
+                _finite(weather.get("maximum_apparent_temperature_c")),
+            )
+            if value is not None
+        ]
+        weather_material = bool(
+            definition.get("event_type") == "weather"
+            and weather.get("availability") == "available"
+            and weather_maximums
+            and max(weather_maximums) >= weather_heat_threshold
+        )
+        if not matched_news and not members and not weather_material:
             continue
         members.sort(
             key=lambda row: (
@@ -365,9 +443,13 @@ def build_theme_supply_radar(
 
         new_news_count = sum(bool(item.get("is_new_since_last_checkpoint")) for item in matched_news)
         fresh_news_count = sum(item.get("freshness_label") == "새 기사" for item in matched_news)
-        attention_state = "RISING_PROXY" if new_news_count or len(matched_news) >= 2 else ("OBSERVED" if matched_news else "UNAVAILABLE")
+        ranked_member_count = sum(bool(row.get("market_attention_sources")) for row in members)
+        attention_state = (
+            "RISING_PROXY"
+            if new_news_count or len(matched_news) >= 2
+            else ("MARKET_FLOW" if ranked_member_count else ("OBSERVED" if matched_news else "UNAVAILABLE"))
+        )
         alignment = _factor_alignment(definition, market)
-        weather = _weather_evidence(definition, matched_news, market)
         catalysts = [
             {
                 "title": item.get("title"),
@@ -394,6 +476,8 @@ def build_theme_supply_radar(
             evidence.append(supply_label)
         if relative_turnovers:
             evidence.append(f"구성 종목 상대거래대금 중앙값 {median(relative_turnovers):.2f}배")
+        if ranked_member_count:
+            evidence.append(f"KIS 거래대금·거래량 순위 포착 {ranked_member_count}종목")
         if alignment.get("availability") == "available":
             evidence.append(alignment["label"])
         if weather.get("availability") in {"available", "news_proxy"}:
@@ -412,14 +496,15 @@ def build_theme_supply_radar(
             "score_is_probability": False,
             "catalysts": catalysts,
             "attention": {
-                "availability": "proxy" if matched_news else "unavailable",
+                "availability": "proxy" if matched_news else ("market_flow" if ranked_member_count else "unavailable"),
                 "state": attention_state,
                 "news_count": len(matched_news),
                 "fresh_news_count": fresh_news_count,
                 "new_since_checkpoint_count": new_news_count,
+                "market_ranked_member_count": ranked_member_count,
                 "direct_query_rank_available": False,
                 "direct_query_rank": None,
-                "note": "기사·공시 빈도 프록시이며 포털 조회수 데이터가 아닙니다.",
+                "note": "기사·공시 빈도와 KIS 시장 순위이며 포털 조회수 데이터가 아닙니다.",
             },
             "supply": {
                 "availability": "available" if any(row.get("supply_available") for row in members) else "unavailable",
@@ -432,14 +517,11 @@ def build_theme_supply_radar(
                 "relative_turnover_median": median(relative_turnovers) if relative_turnovers else None,
                 "relative_volume_median": median(relative_volumes) if relative_volumes else None,
                 "cumulative_turnover": total_turnover,
-                "scope": "configured symbols only; not market-wide theme breadth",
+                "scope": "configured theme map intersected with received KIS ranking; not full-market theme breadth",
             },
             "global_alignment": alignment,
             "previous_close_context": {
-                "availability": "available" if any(
-                    _finite(((symbol_lookup.get(row["symbol"]) or {}).get("premarket_summary") or {}).get("previous_close")) is not None
-                    for row in members
-                ) else "unavailable",
+                "availability": "available" if any(_finite(row.get("previous_close")) is not None for row in members) else "unavailable",
                 "kospi": deepcopy(market.get("kospi")),
                 "note": "NXT 수익률은 수신된 전일 종가 기준값과 함께 해석합니다.",
             },
@@ -495,7 +577,12 @@ def build_theme_supply_radar(
 
     core_theme_news = any(theme["catalysts"] for theme in themes)
     core_supply = any(theme["supply"]["availability"] == "available" for theme in themes)
-    availability = "available" if core_theme_news and core_supply else ("partial" if themes else "unavailable")
+    core_market_attention = market_attention.get("availability") == "available" and bool(attention_leaders)
+    availability = (
+        "available"
+        if core_supply and (core_theme_news or core_market_attention)
+        else ("partial" if themes or core_market_attention else "unavailable")
+    )
     factors = market.get("factors") or []
     direct_weather = (market.get("weather") or {}).get("availability") == "available"
     checkpoint_rows = _checkpoint_rows(current)
@@ -532,17 +619,26 @@ def build_theme_supply_radar(
             ]),
         },
         "universe": {
-            "configured_symbol_count": len(symbol_rows),
-            "scope": "configured symbols only",
+            "configured_symbol_count": len(configured_symbol_rows),
+            "market_attention_symbol_count": len(attention_leaders),
+            "scope": "configured symbols plus KIS ranked-market slice",
             "market_wide_scanner_available": False,
-            "note": "PREMARKET_SYMBOLS 범위 밖 종목은 발견하지 않습니다.",
+            "market_ranking_available": core_market_attention,
+            "note": "KIS 순위 상위 종목만 추가하며 전체 종목 테마 폭으로 과장하지 않습니다.",
         },
         "source_availability": {
-            "nxt_supply": "available" if any(_member_observation(row)["supply_available"] for row in symbol_rows) else "unavailable",
+            "nxt_supply": "available" if any(_member_observation(row)["supply_available"] for row in configured_symbol_rows) else "unavailable",
+            "market_turnover_ranking": "available" if core_market_attention else "unavailable",
             "theme_news_and_disclosures": "available" if core_theme_news else "unavailable",
             "previous_us_market": "available" if any(str(row.get("key") or "") in {"nasdaq", "sox"} for row in factors) else "unavailable",
             "direct_query_rank": "unavailable",
             "weather_observation_or_forecast": "available" if direct_weather else "unavailable",
+        },
+        "market_attention": {
+            **market_attention,
+            "leaders": attention_leaders[:10],
+            "direct_query_rank_available": False,
+            "trading_signal": False,
         },
         "themes": themes,
         "candidate_annotations": annotations,
@@ -560,6 +656,7 @@ def build_theme_supply_radar(
             "theme_membership_invented": False,
             "query_rank_fabricated": False,
             "weather_signal_fabricated": False,
+            "market_rank_is_portal_query_rank": False,
             "can_override_kospi_gate": False,
         },
     }

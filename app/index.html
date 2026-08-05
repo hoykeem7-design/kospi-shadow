@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="KOSPI Market Gate와 테마·수급 레이더를 결합해 관찰 후보와 추격 위험을 구분하는 투자 의사결정 코치 v5.3">
-  <title>KOSPI Shadow Decision Coach v5.3</title>
+  <meta name="description" content="KOSPI Market Gate와 실제 거래대금·거래량 순위, 테마·날씨 근거를 결합하는 투자 의사결정 코치 v5.3.1">
+  <title>KOSPI Shadow Decision Coach v5.3.1</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
@@ -14,7 +14,7 @@
   <header class="topbar">
     <div class="brand-copy">
       <p class="eyebrow">KOSPI SHADOW</p>
-      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.3</span></div>
+      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.3.1</span></div>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
@@ -147,6 +147,15 @@
           <span id="themeRadarSources">데이터 출처 확인 중</span>
           <span id="themeRadarGate">KOSPI Gate 종속</span>
         </div>
+        <section class="market-attention-panel" aria-labelledby="marketAttentionTitle">
+          <div class="market-attention-head">
+            <div><p class="eyebrow">MARKET ATTENTION</p><h3 id="marketAttentionTitle">실시간 거래대금·거래량 관심 종목</h3></div>
+            <span id="marketAttentionStatus" class="badge">수신 확인 중</span>
+          </div>
+          <p id="marketAttentionNote" class="market-attention-note">포털 조회수가 아니라 KIS 시장 거래 순위입니다.</p>
+          <div id="marketAttentionList" class="market-attention-list"></div>
+          <div id="marketAttentionEmpty" class="empty-state hidden">현재 세션의 시장 순위 데이터를 받지 못했습니다.</div>
+        </section>
         <div id="themeRadarList" class="theme-radar-list"></div>
         <div id="themeRadarEmpty" class="empty-state hidden">확인 가능한 테마·수급 근거가 없습니다.</div>
         <p class="explanation-note">테마 레이더는 관찰 순서를 정리할 뿐 진입을 허용하지 않습니다. 조회수·날씨·수급 데이터가 없으면 추정하지 않고 미연결로 표시합니다.</p>
@@ -255,7 +264,7 @@
       </details>
 
       <details id="operations" class="section-block card disclosure-card">
-        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.3</span></summary>
+        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.3.1</span></summary>
         <div class="disclosure-body"><dl id="operationsMetrics" class="metric-list"></dl><p class="explanation-note">최신 데이터는 Netlify의 정적 dashboard.json을 확인합니다. 앱 다시 받기는 서비스워커와 화면 파일을 갱신한 뒤 페이지를 다시 엽니다.</p></div>
       </details>
 

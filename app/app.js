@@ -8,7 +8,7 @@ const safeUrl = (value) => { try { const url = new URL(String(value)); return ["
 // These are actual Coach workflow deployment times. The four Market Gate
 // checkpoints are published at 07:30, 08:00, 08:50 and 09:05 KST.
 const AUTO_UPDATE_TIMES = ["07:30","08:00","08:50","09:05","12:00","15:20","15:35","15:45","18:00","20:05"];
-const APP_SHELL_VERSION = "5.3.0";
+const APP_SHELL_VERSION = "5.3.1";
 const CONFIRMATION_LABELS = {
   nxt_configured_symbols_positive: "NXT 관찰 종목의 방향 확인",
   kospi200_futures_nonnegative: "KOSPI200 선물의 비약세 확인",
@@ -282,9 +282,41 @@ function supplyStateLabel(state) {
   })[state] || safeText(state, "수급 확인 중");
 }
 
+function fmtKrwCompact(value) {
+  if (value == null || Number.isNaN(Number(value))) return "거래대금 --";
+  const amount = Number(value);
+  if (Math.abs(amount) >= 1000000000000) return `거래대금 ${fmtNum(amount / 1000000000000,1)}조원`;
+  if (Math.abs(amount) >= 100000000) return `거래대금 ${fmtNum(amount / 100000000,0)}억원`;
+  return `거래대금 ${fmtNum(amount / 10000,0)}만원`;
+}
+
+function renderMarketAttention(attention) {
+  const leaders = attention?.leaders || [];
+  const available = attention?.availability === "available" && leaders.length > 0;
+  $("marketAttentionStatus").textContent = available ? `${safeText(attention.market,"시장")} ${fmtNum(leaders.length,0)}종목 수신` : "시장 순위 미수신";
+  $("marketAttentionStatus").className = `badge ${available ? "fresh" : "warning-badge"}`;
+  $("marketAttentionNote").textContent = safeText(attention?.note, "포털 조회수가 아니라 실제 거래대금·거래량 증가 순위입니다.");
+  $("marketAttentionEmpty").classList.toggle("hidden", available);
+  $("marketAttentionList").innerHTML = available ? leaders.slice(0,5).map((item,index) => {
+    const ranks = item?.ranks || {};
+    const badges = [
+      ranks.turnover == null ? null : `거래대금 #${fmtNum(ranks.turnover,0)}`,
+      ranks.volume_growth == null ? null : `거래증가 #${fmtNum(ranks.volume_growth,0)}`
+    ].filter(Boolean);
+    return `<article class="market-attention-item">
+      <div class="market-attention-rank">#${index+1}</div>
+      <div class="market-attention-copy"><strong>${escapeHtml(item?.name)}</strong><small>${escapeHtml(item?.symbol)} · ${escapeHtml(fmtKrwCompact(item?.cumulative_turnover))}</small><div>${badges.map(value => `<span>${escapeHtml(value)}</span>`).join("")}</div></div>
+      <div class="market-attention-move"><strong class="${clsFor(item?.current_return)}">${item?.current_return == null ? "--" : fmtPct(item.current_return,2)}</strong><small>${item?.volume_growth_rate == null ? "증가율 --" : `거래량 ${fmtPct(item.volume_growth_rate,0)}`}</small></div>
+    </article>`;
+  }).join("") : "";
+}
+
 function themeMemberRow(member) {
   const role = member?.role === "LEADER_OBSERVATION" ? "대장 관찰" : "후속 관찰";
-  const relative = member?.relative_turnover == null ? "상대거래대금 --" : `상대거래대금 ${fmtNum(member.relative_turnover,2)}배`;
+  const turnoverRank = member?.market_attention_ranks?.turnover;
+  const relative = member?.relative_turnover == null
+    ? (turnoverRank == null ? fmtKrwCompact(member?.cumulative_turnover) : `시장 거래대금 #${fmtNum(turnoverRank,0)}`)
+    : `상대거래대금 ${fmtNum(member.relative_turnover,2)}배`;
   return `<div class="theme-member"><div><strong>${escapeHtml(member?.name)}</strong><small>${escapeHtml(member?.symbol)} · ${escapeHtml(role)}</small></div><div><span class="${clsFor(member?.active_return)}">${member?.active_return == null ? "방향 미수신" : fmtPct(member.active_return,2)}</span><small>${escapeHtml(relative)}</small></div></div>`;
 }
 
@@ -298,12 +330,14 @@ function renderThemeCard(theme) {
   const catalysts = theme?.catalysts || [];
   const blockers = theme?.blockers || [];
   const actionClass = theme?.action === "CHASE_REVIEW" ? "chase" : (theme?.action === "OBSERVE" ? "observe" : "wait");
-  const weatherLabel = weather.availability === "available" ? "날씨 데이터 확인" : (weather.availability === "news_proxy" ? "날씨 기사 프록시" : null);
+  const weatherLabel = weather.availability === "available"
+    ? `${safeText(weather.location,"서울")} ${weather.temperature_c == null ? "날씨" : `${fmtNum(weather.temperature_c,1)}℃`}${weather.maximum_temperature_c == null ? "" : ` · 최고 ${fmtNum(weather.maximum_temperature_c,1)}℃`}`
+    : (weather.availability === "news_proxy" ? "날씨 기사 프록시" : null);
   const chips = [
     supplyStateLabel(supply.state),
     `구성 ${fmtNum(supply.member_count,0)}종목`,
     supply.relative_turnover_median == null ? "상대거래대금 미수신" : `상대거래대금 중앙값 ${fmtNum(supply.relative_turnover_median,2)}배`,
-    attention.availability === "proxy" ? `기사·공시 프록시 ${fmtNum(attention.news_count,0)}건` : "관심도 미연결",
+    attention.availability === "proxy" ? `기사·공시 프록시 ${fmtNum(attention.news_count,0)}건` : (attention.availability === "market_flow" ? `시장 순위 ${fmtNum(attention.market_ranked_member_count,0)}종목` : "관심도 미연결"),
     previousClose.availability === "available" ? "전일 종가 기준 확인" : "전일 종가 미수신",
     alignment.availability === "available" ? alignment.label : null,
     weatherLabel
@@ -321,19 +355,22 @@ function renderThemeSupplyRadar(coach, gateLocked) {
   const themes = radar?.themes || [];
   const sources = radar?.source_availability || {};
   const universe = radar?.universe || {};
+  const marketAttention = radar?.market_attention || {};
   const status = radar.availability === "available" ? "근거 수신" : (radar.availability === "partial" ? "일부 수신" : "데이터 없음");
   $("themeRadarStatus").textContent = `${status} · Shadow 전용`;
   $("themeRadarStatus").className = `badge ${radar.availability === "available" ? "fresh" : "warning-badge"}`;
   $("themeRadarSummary").textContent = safeText(radar.summary, "테마·수급 근거를 확인하지 못했습니다.");
-  $("themeRadarScope").textContent = `설정 종목 ${fmtNum(universe.configured_symbol_count,0)}개 범위`;
+  $("themeRadarScope").textContent = `설정 ${fmtNum(universe.configured_symbol_count,0)}개 + 시장순위 ${fmtNum(universe.market_attention_symbol_count,0)}개`;
   const availableSources = [
     sources.nxt_supply === "available" ? "NXT 수급" : null,
+    sources.market_turnover_ranking === "available" ? "KIS 시장순위" : null,
     sources.theme_news_and_disclosures === "available" ? "기사·공시" : null,
     sources.previous_us_market === "available" ? "전일 미국장" : null,
     sources.weather_observation_or_forecast === "available" ? "날씨" : null
   ].filter(Boolean);
   $("themeRadarSources").textContent = availableSources.length ? `수신: ${availableSources.join(" · ")}` : "핵심 출처 미수신";
   $("themeRadarGate").textContent = gateLocked ? `KOSPI Gate ${safeText(radar.kospi_gate_status,"UNAVAILABLE")} · 진입 잠금` : "Gate 통과 여부와 무관하게 검증 전 관찰만";
+  renderMarketAttention(marketAttention);
   $("themeRadarEmpty").classList.toggle("hidden", themes.length > 0);
   $("themeRadarList").innerHTML = themes.map(renderThemeCard).join("");
 }

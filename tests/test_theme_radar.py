@@ -162,6 +162,78 @@ def test_ai_keyword_requires_a_whole_token():
     assert not any(theme["key"] == "semiconductor_ai" for theme in radar["themes"])
 
 
+def test_publisher_suffix_does_not_create_false_shipbuilding_theme():
+    radar = build_theme_supply_radar(
+        now=datetime(2026, 8, 5, 9, 5, tzinfo=SEOUL),
+        phase={"phase": "entry_decision", "next_checkpoint_at": "09:30"},
+        symbols=[],
+        news=[{
+            "title": "코스피 상승 출발 - 조선일보",
+            "source_name": "조선일보",
+            "theme_tags": ["조선"],
+            "related_symbols": [],
+        }],
+        market={"factors": []},
+        market_gate=_gate(),
+    )
+    assert not any(theme["key"] == "shipbuilding" for theme in radar["themes"])
+
+
+def test_market_rank_slice_fills_mapped_theme_supply_without_query_rank():
+    radar = build_theme_supply_radar(
+        now=datetime(2026, 8, 5, 11, 0, tzinfo=SEOUL),
+        phase={"phase": "intraday_management", "next_checkpoint_at": "12:00"},
+        symbols=[],
+        news=[],
+        market={
+            "factors": [],
+            "stock_attention": {
+                "availability": "available",
+                "market": "KRX",
+                "note": "실제 거래 순위",
+                "leaders": [
+                    {"symbol": "005930", "name": "삼성전자", "current_return": 0.03, "previous_close": 100,
+                     "cumulative_turnover": 5_000_000_000, "ranks": {"turnover": 1},
+                     "ranking_sources": ["turnover"], "observed_at": "2026-08-05T11:00:00+09:00", "data_quality": "good"},
+                    {"symbol": "000660", "name": "SK하이닉스", "current_return": 0.02, "previous_close": 100,
+                     "cumulative_turnover": 4_000_000_000, "ranks": {"turnover": 2},
+                     "ranking_sources": ["turnover"], "observed_at": "2026-08-05T11:00:00+09:00", "data_quality": "good"},
+                ],
+            },
+        },
+        market_gate=_gate(),
+        config={"themes": [{"key": "semiconductor_ai", "symbols": ["005930", "000660"]}]},
+    )
+    theme = next(row for row in radar["themes"] if row["key"] == "semiconductor_ai")
+    assert radar["availability"] == "available"
+    assert radar["source_availability"]["market_turnover_ranking"] == "available"
+    assert radar["market_attention"]["direct_query_rank_available"] is False
+    assert theme["supply"]["state"] == "BROAD_POSITIVE"
+    assert theme["attention"]["state"] == "MARKET_FLOW"
+    assert theme["previous_close_context"]["availability"] == "available"
+    assert theme["members"][0]["market_attention_ranks"]["turnover"] == 1
+
+
+def test_hot_weather_forecast_creates_context_not_a_trade_signal():
+    radar = build_theme_supply_radar(
+        now=datetime(2026, 8, 5, 7, 30, tzinfo=SEOUL),
+        phase={"phase": "overnight_brief", "next_checkpoint_at": "08:00"},
+        symbols=[],
+        news=[],
+        market={"factors": [], "weather": {
+            "availability": "available", "location": "서울", "source": "forecast",
+            "temperature_c": 31.0, "maximum_temperature_c": 35.0,
+            "maximum_apparent_temperature_c": 38.0, "alerts": [],
+        }},
+        market_gate=_gate(),
+        config={"weather_heat_threshold_c": 30.0},
+    )
+    theme = next(row for row in radar["themes"] if row["key"] == "cooling_weather")
+    assert theme["weather_event"]["maximum_temperature_c"] == 35.0
+    assert theme["weather_event"]["trading_signal"] is False
+    assert theme["entry_signal_enabled"] is False
+
+
 def test_shadow_ledger_persists_observations_without_trades(tmp_path: Path):
     radar = build_theme_supply_radar(
         now=datetime(2026, 8, 5, 8, 50, tzinfo=SEOUL),

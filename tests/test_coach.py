@@ -111,6 +111,61 @@ def test_kis_futures_snapshot_uses_board_api(monkeypatch):
     assert result["change_rate"] == pytest.approx(-0.0035)
 
 
+def test_kis_market_attention_normalizes_real_rank_fields(monkeypatch):
+    from kospi_shadow import coach
+
+    calls = []
+    def fake_get(url, *, params=None, headers=None, timeout=30, retries=4):
+        calls.append(dict(params or {}))
+        return _FakeResponse({"rt_cd": "0", "output": [{
+            "hts_kor_isnm": "삼성전자",
+            "mksc_shrn_iscd": "005930",
+            "data_rank": "1",
+            "stck_prpr": "81200",
+            "prdy_ctrt": "2.50",
+            "acml_vol": "1234567",
+            "acml_tr_pbmn": "100000000000",
+            "vol_inrt": "180.0",
+            "tr_pbmn_tnrt": "1.2",
+        }]})
+
+    monkeypatch.setenv("KIS_APP_KEY", "key")
+    monkeypatch.setenv("KIS_APP_SECRET", "secret")
+    monkeypatch.setattr(coach, "_retry_get", fake_get)
+    result = coach.fetch_kis_market_attention(
+        now_seoul=datetime(2026, 8, 4, 11, 0, tzinfo=SEOUL),
+        timeout=1,
+        retries=1,
+        token="token",
+    )
+    assert len(calls) == 2
+    assert {row["FID_BLNG_CLS_CODE"] for row in calls} == {"1", "3"}
+    assert all(row["FID_INPUT_ISCD"] == "0001" for row in calls)
+    leader = result["leaders"][0]
+    assert leader["name"] == "삼성전자"
+    assert leader["current_return"] == pytest.approx(0.025)
+    assert leader["volume_growth_rate"] == pytest.approx(1.8)
+    assert leader["previous_close"] == pytest.approx(81200 / 1.025)
+    assert set(leader["ranking_sources"]) == {"turnover", "volume_growth"}
+    assert result["direct_query_rank_available"] is False
+    assert result["trading_signal"] is False
+
+
+def test_weather_snapshot_is_labeled_model_forecast(monkeypatch):
+    from kospi_shadow import coach
+
+    monkeypatch.setattr(coach, "_retry_get", lambda *args, **kwargs: _FakeResponse({
+        "current": {"time": "2026-08-04T11:00", "temperature_2m": 33.2, "apparent_temperature": 36.1},
+        "daily": {"temperature_2m_max": [35.0], "apparent_temperature_max": [38.0], "weather_code": [1]},
+    }))
+    result = coach.fetch_weather_snapshot(timeout=1, retries=1)
+    assert result["availability"] == "available"
+    assert result["maximum_temperature_c"] == 35.0
+    assert result["official_warning_available"] is False
+    assert result["data_quality"] == "forecast_model"
+    assert result["trading_signal"] is False
+
+
 def test_nxt_pre_never_recommends_entry_without_realtime_nxt_feed():
     session = resolve_session_context(datetime(2026, 8, 4, 8, 20, tzinfo=SEOUL))
     result = build_coaching(
@@ -192,12 +247,15 @@ def test_generated_dashboard_keeps_old_fields_and_adds_v5_schema(monkeypatch, tm
     monkeypatch.setattr(coach, "fetch_kis_access_token", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("unavailable")))
     monkeypatch.setattr(coach, "fetch_market_news", lambda **kwargs: [])
     monkeypatch.setattr(coach, "fetch_fred_release_calendar", lambda **kwargs: [])
+    monkeypatch.setattr(coach, "fetch_weather_snapshot", lambda **kwargs: {
+        "availability": "unavailable", "trading_signal": False,
+    })
     monkeypatch.delenv("DART_API_KEY", raising=False)
     dashboard = coach.generate_coach_app(
         settings, tmp_path, now_seoul=datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL)
     )
-    assert dashboard["schema_version"] == 6
-    assert dashboard["app_version"] == "5.3.0"
+    assert dashboard["schema_version"] == 7
+    assert dashboard["app_version"] == "5.3.1"
     assert "prediction" in dashboard
     assert "premarket_experiment" in dashboard
     assert dashboard["decision_coach_v5"]["phase"]["phase"] == "entry_decision"
