@@ -1,0 +1,55 @@
+name: Diagnose Netlify Credentials
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/**"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - name: Check Netlify token and site access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN" || { echo "RESULT=TOKEN_SECRET_MISSING"; exit 2; }
+          test -n "$NETLIFY_SITE_ID" || { echo "RESULT=SITE_ID_SECRET_MISSING"; exit 2; }
+
+          token_http=$(curl --silent --show-error --output /tmp/netlify-user.json --write-out '%{http_code}' \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            https://api.netlify.com/api/v1/user || true)
+          site_http=$(curl --silent --show-error --output /tmp/netlify-site.json --write-out '%{http_code}' \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" || true)
+
+          echo "TOKEN_API_HTTP=$token_http"
+          echo "SITE_API_HTTP=$site_http"
+
+          if [ "$token_http" != "200" ]; then
+            echo "RESULT=NETLIFY_AUTH_TOKEN_INVALID_OR_REVOKED"
+            exit 21
+          fi
+          if [ "$site_http" = "403" ]; then
+            echo "RESULT=TOKEN_VALID_BUT_SITE_ACCESS_FORBIDDEN"
+            exit 22
+          fi
+          if [ "$site_http" = "404" ]; then
+            echo "RESULT=NETLIFY_SITE_ID_NOT_FOUND_FOR_TOKEN"
+            exit 23
+          fi
+          if [ "$site_http" != "200" ]; then
+            echo "RESULT=NETLIFY_SITE_LOOKUP_FAILED_HTTP_$site_http"
+            exit 24
+          fi
+          echo "RESULT=TOKEN_AND_SITE_ACCESS_VALID"
