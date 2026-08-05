@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="KOSPI Market Gate를 중심으로 지금 행동과 다음 확인 조건을 먼저 보여주는 투자 의사결정 코치 v5.2">
-  <title>KOSPI Shadow Decision Coach v5.2</title>
+  <meta name="description" content="KOSPI Market Gate와 테마·수급 레이더를 결합해 관찰 후보와 추격 위험을 구분하는 투자 의사결정 코치 v5.3">
+  <title>KOSPI Shadow Decision Coach v5.3</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
@@ -14,7 +14,7 @@
   <header class="topbar">
     <div class="brand-copy">
       <p class="eyebrow">KOSPI SHADOW</p>
-      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.2</span></div>
+      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.3</span></div>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
@@ -136,6 +136,22 @@
     </div>
 
     <div id="panel-candidates" class="tab-panel" role="tabpanel" aria-labelledby="tab-candidates" data-panel="candidates" hidden>
+      <section id="theme-supply-radar" class="section-block card theme-radar">
+        <div class="section-title">
+          <div><p class="eyebrow">THEME &amp; SUPPLY RADAR</p><h2>오늘 테마·수급 레이더</h2></div>
+          <span id="themeRadarStatus" class="badge warning-badge">Shadow 전용</span>
+        </div>
+        <p id="themeRadarSummary" class="theme-radar-summary">체크포인트 이전 기사·공시와 종목 수급을 확인하고 있습니다.</p>
+        <div class="theme-radar-meta">
+          <span id="themeRadarScope">설정 종목 범위 확인 중</span>
+          <span id="themeRadarSources">데이터 출처 확인 중</span>
+          <span id="themeRadarGate">KOSPI Gate 종속</span>
+        </div>
+        <div id="themeRadarList" class="theme-radar-list"></div>
+        <div id="themeRadarEmpty" class="empty-state hidden">확인 가능한 테마·수급 근거가 없습니다.</div>
+        <p class="explanation-note">테마 레이더는 관찰 순서를 정리할 뿐 진입을 허용하지 않습니다. 조회수·날씨·수급 데이터가 없으면 추정하지 않고 미연결로 표시합니다.</p>
+      </section>
+
       <section id="decision-cards" class="section-block card">
         <div class="section-title"><h2>종목 의사결정 카드</h2><span id="candidateCount" class="muted">최대 5개 관찰 후보</span></div>
         <div id="candidateGateNotice" class="candidate-gate-notice locked">KOSPI Gate 확인 전에는 모든 종목을 관찰 전용으로 잠급니다.</div>
@@ -239,7 +255,7 @@
       </details>
 
       <details id="operations" class="section-block card disclosure-card">
-        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.2</span></summary>
+        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.3</span></summary>
         <div class="disclosure-body"><dl id="operationsMetrics" class="metric-list"></dl><p class="explanation-note">최신 데이터는 Netlify의 정적 dashboard.json을 확인합니다. 앱 다시 받기는 서비스워커와 화면 파일을 갱신한 뒤 페이지를 다시 엽니다.</p></div>
       </details>
 

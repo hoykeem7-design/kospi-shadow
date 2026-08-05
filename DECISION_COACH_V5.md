@@ -1,4 +1,12 @@
-# Decision Coach v5.2 architecture and operating truth
+# Decision Coach v5.3 architecture and operating truth
+
+## Theme & Supply Radar v5.3
+
+`theme_radar.py`는 현재 체크포인트까지 수신된 기사·공시와 설정 종목의 NXT/첫 5분 수급만 사용해 테마 관찰 묶음을 만듭니다. 키워드는 테마 사건을 분류할 뿐 기업과 테마의 관계를 새로 만들지 않습니다. 구성 종목은 `PREMARKET_SYMBOLS`, 명시적인 테마 설정, 또는 시점이 검증된 기사·공시의 `related_symbols`에서만 가져옵니다.
+
+테마별 출력은 기사·공시 빈도 프록시, 구성 종목 수, 상승 종목 비율, 상대거래대금·상대거래량 중앙값, 전일 NASDAQ/SOX 정렬, 전일 종가 기준, 날씨 데이터 가용성, 대장/후속 관찰 순서와 추격 위험을 분리합니다. 포털 조회수·검색순위는 연결되지 않았고 기사 빈도로 대체하지 않습니다. 직접 날씨 관측·예보가 없으면 날씨 기사는 `news_proxy`로만 표시합니다.
+
+레이더는 `mode=shadow_only`, `entry_signal_enabled=false`, `probability=null`이며 KOSPI Gate를 우회하지 못합니다. 07:30·08:00·08:50·09:05 스냅샷은 `app_state/theme_supply_radar.jsonl`에 저장되며 5·15·30분 결과 필드는 검증 데이터가 생기기 전까지 `null`입니다.
 
 ## Decision-first PWA v5.2
 

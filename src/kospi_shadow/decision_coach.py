@@ -12,6 +12,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from .market_gate import build_kospi_market_gate, update_live_prediction_ledger
+from .theme_radar import build_theme_supply_radar, update_theme_radar_ledger
 
 
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -228,6 +229,7 @@ def normalize_news_item(
         "source_count": 1,
         "duplicate_group_id": None,
         "related_symbols": list(item.get("related_symbols") or []),
+        "theme_tags": list(item.get("theme_tags") or item.get("tags") or []),
         "is_new_since_last_checkpoint": is_new,
         "session_bucket": _session_bucket(instant, precision),
         "impact_horizon": item.get("impact_horizon") or "unknown",
@@ -907,6 +909,21 @@ def build_decision_coach(
         premarket_experiment=premarket_experiment,
         config=cfg.get("kospi_market_gate") or {},
     )
+    theme_supply_radar = build_theme_supply_radar(
+        now=now,
+        phase=phase,
+        symbols=symbols,
+        news=cutoff_news,
+        market=market,
+        market_gate=market_gate,
+        config=cfg.get("theme_supply_radar") or {},
+    )
+    theme_supply_radar["shadow_ledger"] = update_theme_radar_ledger(
+        project_root=project_root,
+        radar=theme_supply_radar,
+        persist=persist_history,
+        maximum_records=int((cfg.get("theme_supply_radar") or {}).get("maximum_ledger_records", 5000)),
+    )
     production_truth = premarket_experiment.get("production_truth") or {}
     stock_signal_requested = bool(
         production_truth.get("stock_model_trained")
@@ -941,6 +958,15 @@ def build_decision_coach(
         card["kospi_gate_label"] = market_gate["status_label"]
         card["blocked_by_kospi_gate"] = not market_gate["stock_entries_allowed"]
         card["stock_signal_requested"] = stock_signal_requested
+        card["theme_supply"] = deepcopy(
+            (theme_supply_radar.get("candidate_annotations") or {}).get(str(card.get("symbol")))
+            or {
+                "theme_labels": [],
+                "primary_theme": None,
+                "observation_only": True,
+                "entry_signal_enabled": False,
+            }
+        )
         if card["blocked_by_kospi_gate"]:
             card["risk_factors"] = [
                 f"KOSPI Market Gate: {market_gate['status_label']}",
@@ -1021,12 +1047,13 @@ def build_decision_coach(
             "data_quality": after.get("data_quality", "partial"),
         })
     return {
-        "schema_version": 1,
-        "feature_name": "time_based_decision_coach_v5",
+        "schema_version": 2,
+        "feature_name": "time_based_decision_coach_v5_3",
         "phase": phase,
         "kospi_market_gate": market_gate,
         "kospi_model_lab": market_gate["model_lab"],
         "live_prediction_ledger": live_ledger,
+        "theme_supply_radar": theme_supply_radar,
         "market_environment": _market_environment(market, normalized_news, events),
         "official_disclosure": {
             "availability": "available" if any(item.get("official_disclosure") for item in normalized_news) else "unavailable",
@@ -1058,7 +1085,7 @@ def build_decision_coach(
             "trade_creation_rule": "entry conditions must be met; untrained gate creates no hypothetical trade",
         },
         "operations": {
-            "app_version": "5.2.0",
+            "app_version": "5.3.0",
             "build_sha": os.getenv("GITHUB_SHA") or None,
             "last_netlify_deploy": None,
             "last_data_collection": premarket_experiment.get("generated_at"),
@@ -1098,5 +1125,7 @@ def build_decision_coach(
             "mock_production_response": False,
             "future_news_cutoff_applied": True,
             "post_open_data_used_before_0905": False,
+            "theme_radar_can_override_kospi_gate": False,
+            "theme_radar_entry_signal_enabled": False,
         },
     }
