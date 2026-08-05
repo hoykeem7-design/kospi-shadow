@@ -2,6 +2,17 @@ name: KOSPI Shadow Coach App
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "src/**"
+      - "config/**"
+      - "scripts/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/coach-app.yml"
   schedule:
     - cron: "30 7 * * 1-5"
       timezone: "Asia/Seoul"
