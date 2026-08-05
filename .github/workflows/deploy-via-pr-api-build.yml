@@ -109,7 +109,6 @@ jobs:
         run: |
           set -euo pipefail
           SITE_ID="$(cat /tmp/site-id.txt)"
-          title="KOSPI API shell $EXPECTED_SHA"
           http_code=$(curl --silent --show-error \
             --output outputs/build-response.json \
             --write-out '%{http_code}' \
@@ -117,9 +116,9 @@ jobs:
             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
             -H "Content-Type: application/zip" \
             --data-binary @outputs/site.zip \
-            "https://api.netlify.com/api/v1/sites/$SITE_ID/builds?clear_cache=true&title=$title" || true)
+            "https://api.netlify.com/api/v1/sites/$SITE_ID/builds?clear_cache=true" || true)
           echo "BUILD_API_HTTP=$http_code"
-          cat outputs/build-response.json
+          test -f outputs/build-response.json && cat outputs/build-response.json || true
           test "$http_code" = "200"
           python - <<'PY'
           import json
