@@ -1,0 +1,68 @@
+name: Inspect Netlify Site Configuration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/**"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      PRODUCTION_URL: https://joyful-crostata-e96663.netlify.app
+    steps:
+      - name: Inspect safe Netlify site fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites?per_page=100" \
+            -o /tmp/netlify-sites.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          target = os.environ["PRODUCTION_URL"].rstrip("/")
+          sites = json.loads(Path("/tmp/netlify-sites.json").read_text(encoding="utf-8"))
+          site = next((s for s in sites if target in {str(s.get("url") or "").rstrip("/"), str(s.get("ssl_url") or "").rstrip("/")}), None)
+          if not site:
+              raise SystemExit("Production site not found")
+          repo = site.get("build_settings") or site.get("repo") or {}
+          safe = {
+              "id": site.get("id"),
+              "name": site.get("name"),
+              "url": site.get("url"),
+              "ssl_url": site.get("ssl_url"),
+              "account_name": site.get("account_name"),
+              "account_slug": site.get("account_slug"),
+              "build_image": site.get("build_image"),
+              "build_settings": {
+                  "provider": repo.get("provider"),
+                  "repo_path": repo.get("repo_path"),
+                  "repo_branch": repo.get("repo_branch"),
+                  "dir": repo.get("dir"),
+                  "cmd": repo.get("cmd"),
+                  "allowed_branches": repo.get("allowed_branches"),
+                  "deploy_key_id_present": bool(repo.get("deploy_key_id")),
+                  "installation_id_present": bool(repo.get("installation_id")),
+              },
+              "published_deploy": {
+                  "id": (site.get("published_deploy") or {}).get("id"),
+                  "branch": (site.get("published_deploy") or {}).get("branch"),
+                  "commit_ref": (site.get("published_deploy") or {}).get("commit_ref"),
+                  "context": (site.get("published_deploy") or {}).get("context"),
+                  "published_at": (site.get("published_deploy") or {}).get("published_at"),
+              },
+          }
+          print("SAFE_SITE_CONFIG=" + json.dumps(safe, ensure_ascii=False))
+          PY
