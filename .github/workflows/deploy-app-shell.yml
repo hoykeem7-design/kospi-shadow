@@ -8,6 +8,8 @@ on:
     paths:
       - "app/**"
       - ".github/workflows/deploy-app-shell.yml"
+  schedule:
+    - cron: "25,30,35 23 5 8 *"
 
 permissions:
   contents: read
@@ -23,12 +25,13 @@ jobs:
     env:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      PRODUCTION_URL: https://joyful-crostata-e96663.netlify.app
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.13.0"
 
       - name: Verify Netlify deployment secrets
         shell: bash
@@ -40,34 +43,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf site
           mkdir -p site/data outputs
           cp -R app/. site/
 
           curl --fail --silent --show-error \
-            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
-            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" \
-            -o outputs/netlify-site.json
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          site = json.loads(Path("outputs/netlify-site.json").read_text(encoding="utf-8"))
-          url = site.get("ssl_url") or site.get("url")
-          if not url:
-              raise SystemExit(f"Netlify site response has no public URL: {site}")
-          Path("outputs/production-url.txt").write_text(url.rstrip("/"), encoding="utf-8")
-          PY
-
-          production_url="$(cat outputs/production-url.txt)"
-          curl --fail --silent --show-error \
+            --retry 4 --retry-delay 3 \
             -H "Cache-Control: no-cache" \
-            "$production_url/data/dashboard.json?source_sha=$GITHUB_SHA" \
+            "$PRODUCTION_URL/data/dashboard.json?source_sha=$GITHUB_SHA" \
             -o outputs/production-dashboard.json
 
           curl --fail --silent --show-error \
+            --retry 2 --retry-delay 2 \
             -H "Cache-Control: no-cache" \
-            "$production_url/data/history.json?source_sha=$GITHUB_SHA" \
+            "$PRODUCTION_URL/data/history.json?source_sha=$GITHUB_SHA" \
             -o site/data/history.json \
             || printf '[]\n' > site/data/history.json
 
@@ -78,8 +67,7 @@ jobs:
           from pathlib import Path
           from zoneinfo import ZoneInfo
 
-          source = Path("outputs/production-dashboard.json")
-          dashboard = json.loads(source.read_text(encoding="utf-8"))
+          dashboard = json.loads(Path("outputs/production-dashboard.json").read_text(encoding="utf-8"))
           previous_generated_at = dashboard.get("generated_at_seoul")
           dashboard["app_version"] = "5.3.1"
           dashboard["build_sha"] = os.environ["GITHUB_SHA"]
@@ -108,6 +96,7 @@ jobs:
       - name: Validate app shell package
         shell: bash
         run: |
+          set -euo pipefail
           test -f site/index.html
           test -f site/app.js
           test -f site/sw.js
@@ -123,15 +112,14 @@ jobs:
           from pathlib import Path
 
           dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
-          if dashboard.get("app_version") != "5.3.1":
-              raise SystemExit(f"unexpected app version: {dashboard.get('app_version')}")
-          if dashboard.get("build_sha") != os.environ["GITHUB_SHA"]:
-              raise SystemExit("app shell build SHA mismatch")
+          assert dashboard.get("app_version") == "5.3.1", dashboard.get("app_version")
+          assert dashboard.get("build_sha") == os.environ["GITHUB_SHA"], dashboard.get("build_sha")
           PY
 
       - name: Deploy app shell to Netlify production
         shell: bash
         run: |
+          set -euo pipefail
           npx --yes netlify-cli@26.2.0 deploy \
             --prod \
             --no-build \
@@ -146,29 +134,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          production_url="$(cat outputs/production-url.txt)"
           verified=0
-          for attempt in $(seq 1 18); do
+          for attempt in $(seq 1 24); do
             if curl --fail --silent --show-error \
+                --retry 2 --retry-delay 2 \
                 -H "Cache-Control: no-cache" \
-                "$production_url/index.html?sha=$GITHUB_SHA&attempt=$attempt" \
+                "$PRODUCTION_URL/index.html?sha=$GITHUB_SHA&attempt=$attempt" \
                 -o outputs/live-index.html \
               && curl --fail --silent --show-error \
+                --retry 2 --retry-delay 2 \
                 -H "Cache-Control: no-cache" \
-                "$production_url/data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
+                "$PRODUCTION_URL/data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
                 -o outputs/live-dashboard.json; then
-              if grep -q "v5.3.1" outputs/live-index.html \
-                && python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          dashboard = json.loads(Path("outputs/live-dashboard.json").read_text(encoding="utf-8"))
-          raise SystemExit(0 if dashboard.get("build_sha") == os.environ["GITHUB_SHA"] else 1)
-          PY
-              then
-                verified=1
-                break
+              if grep -q "v5.3.1" outputs/live-index.html; then
+                LIVE_DASHBOARD_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
+                if [ "$LIVE_DASHBOARD_SHA" = "$GITHUB_SHA" ]; then
+                  verified=1
+                  break
+                fi
               fi
             fi
             sleep 5
@@ -183,9 +166,7 @@ jobs:
             echo "## Independent app-shell deployment"
             echo "- Commit: $GITHUB_SHA"
             echo "- Expected app version: v5.3.1"
-            if [ -f outputs/production-url.txt ]; then
-              echo "- Production URL: $(cat outputs/production-url.txt)"
-            fi
+            echo "- Production URL: $PRODUCTION_URL"
             if [ -f outputs/netlify-shell-deploy.json ]; then
               echo '```json'
               cat outputs/netlify-shell-deploy.json
