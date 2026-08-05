@@ -57,6 +57,11 @@ coach:
   news_query: "코스피 OR 증시 OR 환율 OR 금리 OR 반도체"
   news_limit: 12
   event_horizon_days: 7
+  market_attention_limit: 20
+  weather:
+    label: 서울
+    latitude: 37.5665
+    longitude: 126.9780
 
 # Presentation/ranking controls, not validated trading rules. Observation
 # scores sort received evidence and must never be displayed as probabilities.
@@ -92,9 +97,26 @@ decision_coach:
     minimum_breadth_ratio: 0.60
     maximum_nxt_return_before_chase_review: 0.08
     maximum_opening_return_before_chase_review: 0.05
+    weather_heat_threshold_c: 30.0
     maximum_ledger_records: 5000
     validation_horizons_minutes: [5, 15, 30]
-    themes: []
+    # Explicit observation map only. A mapped symbol is shown only when it is
+    # actually received through PREMARKET_SYMBOLS or the live KIS rank slice.
+    themes:
+      - key: semiconductor_ai
+        symbols: ["005930", "000660", "042700"]
+      - key: secondary_battery
+        symbols: ["373220", "006400", "051910"]
+      - key: cooling_weather
+        symbols: ["002700", "009450"]
+      - key: defense
+        symbols: ["012450", "047810", "079550"]
+      - key: shipbuilding
+        symbols: ["329180", "009540", "010140"]
+      - key: nuclear_power
+        symbols: ["034020", "267260", "010120"]
+      - key: bio_health
+        symbols: ["207940", "068270", "326030"]
   signal_gate:
     require_walk_forward_validation: true
     require_no_future_leakage: true

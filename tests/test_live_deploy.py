@@ -86,11 +86,11 @@ def test_v53_app_shell_is_decision_first_and_research_is_collapsed():
 def test_v53_refresh_reloads_the_app_shell_and_rotates_static_cache():
     javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
     worker = (ROOT / "app" / "sw.js").read_text(encoding="utf-8")
-    assert 'const APP_SHELL_VERSION = "5.3.0"' in javascript
+    assert 'const APP_SHELL_VERSION = "5.3.1"' in javascript
     assert "reloadAppShell" in javascript
     assert "window.location.reload()" in javascript
     assert 'registration.update()' in javascript
-    assert 'kospi-shadow-decision-coach-v5-3-static' in worker
+    assert 'kospi-shadow-decision-coach-v5-3-1-static' in worker
     assert 'client.navigate(client.url)' in worker
     assert 'SKIP_WAITING' in worker
 
@@ -110,7 +110,10 @@ def test_theme_supply_radar_is_shadow_only_and_exposes_no_entry_unlock():
     source = (ROOT / "src" / "kospi_shadow" / "theme_radar.py").read_text(encoding="utf-8")
     assert 'id="theme-supply-radar"' in html
     assert 'id="themeRadarList"' in html
+    assert 'id="marketAttentionList"' in html
+    assert 'id="marketAttentionStatus"' in html
     assert "renderThemeSupplyRadar" in javascript
+    assert "renderMarketAttention" in javascript
     assert "direct_query_rank_available" in source
     assert '"entry_signal_enabled": False' in source
     assert '"can_override_kospi_gate": False' in source

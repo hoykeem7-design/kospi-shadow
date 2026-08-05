@@ -1085,7 +1085,7 @@ def build_decision_coach(
             "trade_creation_rule": "entry conditions must be met; untrained gate creates no hypothetical trade",
         },
         "operations": {
-            "app_version": "5.3.0",
+            "app_version": "5.3.1",
             "build_sha": os.getenv("GITHUB_SHA") or None,
             "last_netlify_deploy": None,
             "last_data_collection": premarket_experiment.get("generated_at"),
