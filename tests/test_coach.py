@@ -197,7 +197,7 @@ def test_generated_dashboard_keeps_old_fields_and_adds_v5_schema(monkeypatch, tm
         settings, tmp_path, now_seoul=datetime(2026, 8, 4, 9, 5, tzinfo=SEOUL)
     )
     assert dashboard["schema_version"] == 5
-    assert dashboard["app_version"] == "5.1.0"
+    assert dashboard["app_version"] == "5.2.0"
     assert "prediction" in dashboard
     assert "premarket_experiment" in dashboard
     assert dashboard["decision_coach_v5"]["phase"]["phase"] == "entry_decision"

@@ -1,4 +1,10 @@
-# Decision Coach v5 architecture and operating truth
+# Decision Coach v5.2 architecture and operating truth
+
+## Decision-first PWA v5.2
+
+운영 화면은 `오늘 판단`, `종목 후보`, `근거·연구`로 분리됩니다. 첫 화면은 KOSPI Market Gate의 현재 행동과 판단 근거, 다음 변경 조건, 체크포인트 시각을 우선합니다. 확률 설명, Model Lab, 라이브 예측 원장, Data Lab, 수집 상태는 연구 탭의 기본 접힘 영역에 유지하므로 데이터 계약과 감사 가능성을 삭제하지 않습니다.
+
+KOSPI Gate의 `stock_entries_allowed` 또는 종목 `signal_gate.stock_signal_enabled`가 거짓이면 종목 카드는 관찰 전용으로 잠기며, 조건 상세는 사용자가 펼치기 전까지 숨깁니다. `signal_enabled=false`인 KOSPI 확률은 연구값으로만 표시합니다. PWA는 새 정적 캐시가 활성화될 때 기존 열린 화면을 다시 탐색하며, 사용자가 `앱 다시 받기`를 누르면 서비스워커 업데이트 검사 후 실제 페이지 재로딩을 수행합니다.
 
 ## KOSPI Market Gate v5.1
 

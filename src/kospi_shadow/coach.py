@@ -791,7 +791,7 @@ def generate_coach_app(settings: Settings, project_root: Path, *, now_seoul: dat
     decision_coach["official_disclosure"] = disclosure_status
     dashboard = {
         "schema_version": 5,
-        "app_version": "5.1.0",
+        "app_version": "5.2.0",
         "build_sha": os.getenv("GITHUB_SHA") or None,
         "generated_at_seoul": now_seoul.isoformat(),
         "session": {

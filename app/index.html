@@ -4,250 +4,259 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="KOSPI Market Gate와 실데이터 검증 상태를 구분하는 시간대별 투자 의사결정 코치 v5.1">
-  <title>KOSPI Shadow Decision Coach v5.1</title>
+  <meta name="description" content="KOSPI Market Gate를 중심으로 지금 행동과 다음 확인 조건을 먼저 보여주는 투자 의사결정 코치 v5.2">
+  <title>KOSPI Shadow Decision Coach v5.2</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <div>
+    <div class="brand-copy">
       <p class="eyebrow">KOSPI SHADOW</p>
-      <h1>Decision Coach v5.1</h1>
+      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.2</span></div>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
-      <button id="screenRefreshButton" class="ghost" aria-label="화면 새로고침">화면 새로고침</button>
-      <button id="refreshButton" class="ghost" aria-label="최신 배포본 확인">최신 배포 확인</button>
+      <button id="screenRefreshButton" class="ghost" aria-label="새 앱 화면 다시 받기">앱 다시 받기</button>
     </div>
   </header>
 
-  <nav class="section-nav" aria-label="앱 메뉴">
-    <a href="#kospi-market-gate">KOSPI Gate</a>
-    <a href="#decision-summary">지금 판단</a>
-    <a href="#decision-cards">종목 후보</a>
-    <a href="#news-section">기사·공시</a>
-    <a href="#post-market">마감·애프터</a>
-    <a href="#kospi-model-lab">Model Lab</a>
-    <a href="#data-lab">종목 Data Lab</a>
-    <a href="#operations">수집 상태</a>
+  <nav class="section-nav" role="tablist" aria-label="앱 화면">
+    <button id="tab-today" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="panel-today" data-tab="today">오늘 판단</button>
+    <button id="tab-candidates" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-candidates" data-tab="candidates">종목 후보</button>
+    <button id="tab-research" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-research" data-tab="research">근거·연구</button>
   </nav>
 
   <main id="app" class="container" aria-live="polite">
-    <section id="kospi-market-gate" class="market-gate card">
-      <div class="market-gate-head">
-        <div>
-          <p class="eyebrow">KOSPI MARKET GATE</p>
-          <h2>오늘 KOSPI 매매 판단</h2>
+    <div id="panel-today" class="tab-panel" role="tabpanel" aria-labelledby="tab-today" data-panel="today">
+      <section id="kospi-market-gate" class="market-gate card">
+        <div class="market-gate-head">
+          <div>
+            <p class="eyebrow">KOSPI MARKET GATE</p>
+            <h2>오늘 KOSPI 매매 판단</h2>
+          </div>
+          <span id="marketGateStatus" class="gate-status gate-unavailable">UNAVAILABLE · 판단 불가</span>
         </div>
-        <span id="marketGateStatus" class="gate-status gate-unavailable">UNAVAILABLE</span>
-      </div>
-      <p id="marketGateSummary" class="market-gate-summary">오늘 데이터와 모델 승격 상태를 확인하고 있습니다.</p>
-      <div class="gate-metric-grid">
-        <div><span>당일 종가 상승 확률</span><strong id="sessionCloseProbability">--</strong><small>당일 시가→종가</small></div>
-        <div><span>현재→종가 상승 확률</span><strong id="remainingSessionProbability">--</strong><small id="remainingSessionReason">별도 모델 확인 중</small></div>
-        <div><span>시장 폭</span><strong id="marketBreadth">--</strong><small id="marketBreadthDetail">상승·하락 종목 수</small></div>
-        <div><span>대형주 편중</span><strong id="largeCapConcentration">--</strong><small>시장 폭–지수 괴리 추정</small></div>
-      </div>
-      <div id="marketGateCheckpoints" class="gate-checkpoints"></div>
-      <div class="gate-action-row">
-        <div><span class="muted">지금 행동</span><strong id="marketGateAction">매매 보류</strong></div>
-        <div id="marketGateAbstention" class="abstention active"><strong>매매 보류</strong><span id="marketGateReason">필수 조건 확인 중</span></div>
-      </div>
-      <p class="explanation-note">TRADE_OK는 모델의 signal_enabled=true와 09:05 현물·선물·시장 폭 확인이 모두 통과할 때만 가능합니다.</p>
-    </section>
 
-    <section class="hero card">
-      <div class="session-row">
-        <span id="sessionBadge" class="badge">불러오는 중</span>
-        <span id="generatedAt" class="muted"></span>
-      </div>
-      <h2 id="sessionTitle">시장 상태 확인 중</h2>
-      <p id="sessionDescription" class="muted"></p>
-      <div class="freshness-row"><span id="freshnessBadge" class="badge">데이터 확인 중</span><span id="nextAutoUpdate" class="muted"></span></div>
-      <div class="hero-grid">
-        <div class="probability-wrap">
-          <div id="gauge" class="gauge" style="--p:50">
-            <div>
-              <span class="gauge-label">상승 확률</span>
-              <strong id="probability">--</strong>
+        <div class="decision-command">
+          <span>지금 행동</span>
+          <strong id="marketGateAction">매매 보류</strong>
+          <p id="marketGateSummary">필수 모델과 시장 데이터를 확인하고 있습니다.</p>
+        </div>
+
+        <div class="cockpit-meta" aria-label="데이터 갱신 상태">
+          <span id="freshnessBadge" class="badge">데이터 확인 중</span>
+          <span id="generatedAt" class="muted">생성 시각 확인 중</span>
+          <span id="nextAutoUpdate" class="muted">다음 체크포인트 확인 중</span>
+        </div>
+
+        <div class="decision-proof-grid">
+          <section>
+            <h3>이 판단의 핵심 근거</h3>
+            <ul id="marketGateReasons" class="plain-list"><li>필수 조건 확인 중</li></ul>
+          </section>
+          <section>
+            <h3>판단을 바꿀 다음 조건</h3>
+            <ul id="marketGateConditions" class="plain-list"><li>다음 체크포인트 데이터 확인</li></ul>
+          </section>
+        </div>
+
+        <div class="gate-metric-grid">
+          <div id="sessionProbabilityMetric">
+            <span>당일 종가 상승 확률</span>
+            <strong id="sessionCloseProbability">--</strong>
+            <small id="sessionCloseProbabilityUse">시가→종가 연구값</small>
+          </div>
+          <div>
+            <span>현재→종가 상승 확률</span>
+            <strong id="remainingSessionProbability">--</strong>
+            <small id="remainingSessionReason">별도 모델 확인 중</small>
+          </div>
+          <div>
+            <span>시장 폭</span>
+            <strong id="marketBreadth">--</strong>
+            <small id="marketBreadthDetail">상승·하락 종목 수</small>
+          </div>
+          <div>
+            <span>대형주 편중</span>
+            <strong id="largeCapConcentration">--</strong>
+            <small>시장 폭–지수 괴리 추정치</small>
+          </div>
+        </div>
+
+        <details class="inline-disclosure">
+          <summary>07:30·08:00·08:50·09:05 체크포인트 보기</summary>
+          <div id="marketGateCheckpoints" class="gate-checkpoints"></div>
+        </details>
+
+        <div id="marketGateAbstention" class="abstention active">
+          <strong>매매 보류</strong>
+          <span id="marketGateReason">필수 조건 확인 중</span>
+        </div>
+        <p class="explanation-note">TRADE_OK는 signal_enabled=true이며 09:05 현물·선물·시장 폭 확인까지 통과할 때만 가능합니다. 이 화면은 체크포인트 스냅샷이며 실시간 주문 화면이 아닙니다.</p>
+      </section>
+
+      <details id="decision-summary" class="section-block card disclosure-card">
+        <summary><span>세부 실행 기준</span><span id="decisionPhase" class="badge">단계 확인 중</span></summary>
+        <div class="disclosure-body">
+          <p id="decisionPhaseDescription" class="muted"></p>
+          <div class="question-grid">
+            <div><span>1</span><strong>무엇을 관찰할까</strong><p id="whatToWatch">데이터 확인 중</p></div>
+            <div><span>2</span><strong>언제 진입을 검토할까</strong><p id="whenToEnter">09:05 완성 데이터 확인 전 판단 보류</p></div>
+            <div><span>3</span><strong>언제 축소·청산할까</strong><p id="whenToExit">진입 논리와 구조적 기준 재확인</p></div>
+          </div>
+          <div id="topChecks" class="chip-list"></div>
+          <p class="experiment-warning">종목 확률 모델이 미학습·미승격이면 가격과 거래량은 관찰 신호일 뿐이며 신규 진입 근거로 사용하지 않습니다.</p>
+        </div>
+      </details>
+
+      <section class="section-block market-snapshot-block">
+        <div class="section-title"><h2>시장 스냅샷</h2><span id="dataSource" class="muted"></span></div>
+        <div id="marketGrid" class="market-grid"></div>
+      </section>
+
+      <details class="section-block card disclosure-card">
+        <summary><span>한눈에 보는 핵심 근거</span><span class="summary-hint">모델·시장·뉴스</span></summary>
+        <div id="briefingList" class="briefing-grid disclosure-body"></div>
+      </details>
+
+      <details class="section-block card disclosure-card">
+        <summary><span>오늘의 전체 체크포인트</span><span class="summary-hint">시간대별 코칭</span></summary>
+        <div id="timeline" class="timeline disclosure-body"></div>
+      </details>
+
+      <details id="news-section" class="section-block card disclosure-card">
+        <summary><span>기사·공시·주요 발표</span><span id="disclosureAvailability" class="summary-hint">시각·출처 확인</span></summary>
+        <div class="two-column disclosure-body">
+          <section><div class="section-title"><h2>주요 기사·공시</h2></div><div id="newsList" class="list"></div></section>
+          <section><div class="section-title"><h2>향후 7일 주요 발표</h2></div><div id="eventList" class="list"></div></section>
+        </div>
+      </details>
+    </div>
+
+    <div id="panel-candidates" class="tab-panel" role="tabpanel" aria-labelledby="tab-candidates" data-panel="candidates" hidden>
+      <section id="decision-cards" class="section-block card">
+        <div class="section-title"><h2>종목 의사결정 카드</h2><span id="candidateCount" class="muted">최대 5개 관찰 후보</span></div>
+        <div id="candidateGateNotice" class="candidate-gate-notice locked">KOSPI Gate 확인 전에는 모든 종목을 관찰 전용으로 잠급니다.</div>
+        <div id="decisionCardList" class="decision-card-list"></div>
+      </section>
+
+      <details class="section-block card disclosure-card premarket-experiment">
+        <summary><span>개별 종목 NXT 2단계 프레임워크</span><span class="experiment-head"><span id="premarketPhase" class="badge">데이터 확인 중</span><span class="badge warning-badge">실험 기능</span></span></summary>
+        <div class="disclosure-body">
+          <p class="experiment-status">2단계 데이터 수집·피처·검증 프레임워크이며 종목 확률 모델은 별도 승격 전까지 매매 신호로 쓰지 않습니다.</p>
+          <p class="experiment-warning">프리장 가격과 거래량은 후보 선정 신호이며 본장 방향을 보장하지 않습니다. 확률은 시초가 이후 데이터에 따라 변경될 수 있습니다.</p>
+          <div id="premarketEmpty" class="empty-state">설정된 종목이 없거나 데이터를 아직 수신하지 못했습니다.</div>
+          <div id="premarketContent" class="hidden">
+            <label class="symbol-picker">종목 <select id="premarketSymbolSelect" aria-label="NXT 실험 종목 선택"></select></label>
+            <div class="stage-comparison">
+              <section class="stage-card"><span class="stage-label">장전 예측</span><strong id="premarketPredictionStatus">확률 산출 불가</strong><dl id="premarketProbabilities" class="metric-list compact"></dl></section>
+              <section class="stage-card"><span class="stage-label">09:05 확인 후 업데이트</span><strong id="postOpenPredictionStatus">업데이트 확률 산출 전</strong><dl id="postOpenProbabilities" class="metric-list compact"></dl></section>
             </div>
+            <div class="experiment-grid">
+              <section class="experiment-panel"><h3>프리장 요약</h3><dl id="premarketMetrics" class="metric-list compact"></dl></section>
+              <section class="experiment-panel"><h3>동시호가</h3><dl id="auctionMetrics" class="metric-list compact"></dl></section>
+              <section class="experiment-panel"><h3>첫 5분 확인</h3><dl id="openingMetrics" class="metric-list compact"></dl></section>
+            </div>
+            <div class="driver-columns">
+              <section class="driver-panel positive-panel"><h3>상승 가능성을 높인 참고 요인</h3><div id="premarketPositiveFactors" class="driver-list"></div></section>
+              <section class="driver-panel negative-panel"><h3>하락·위험 참고 요인</h3><div id="premarketNegativeFactors" class="driver-list"></div></section>
+            </div>
+            <p id="premarketDataNote" class="explanation-note"></p>
           </div>
-          <div class="target-copy">
-            <span class="muted">예측 대상</span>
-            <strong id="targetDate">--</strong>
-            <span id="directionBadge" class="direction flat">FLAT</span>
+        </div>
+      </details>
+
+      <details id="post-market" class="section-block card disclosure-card">
+        <summary><span>마감·애프터마켓·익일 관찰</span><span class="summary-hint">없는 값은 0으로 대체하지 않음</span></summary>
+        <div class="post-market-grid disclosure-body">
+          <section class="post-card"><h3>정규장 마감 분석</h3><div id="closingReview"></div></section>
+          <section class="post-card"><h3>NXT 애프터마켓</h3><div id="aftermarketReview"></div></section>
+          <section class="post-card"><h3>20:05 다음날 관찰</h3><div id="nextDayWatch"></div></section>
+        </div>
+      </details>
+    </div>
+
+    <div id="panel-research" class="tab-panel" role="tabpanel" aria-labelledby="tab-research" data-panel="research" hidden>
+      <section class="section-block card model-snapshot">
+        <div class="section-title"><h2>기존 모델 확률 스냅샷</h2><span id="sessionBadge" class="badge">불러오는 중</span></div>
+        <p id="sessionDescription" class="muted"></p>
+        <div class="hero-grid compact-hero">
+          <div class="probability-wrap">
+            <div id="gauge" class="gauge" style="--p:50"><div><span class="gauge-label">시가→종가</span><strong id="probability">--</strong></div></div>
+            <div class="target-copy"><span class="muted">예측 대상</span><strong id="targetDate">--</strong><span id="directionBadge" class="direction flat">FLAT</span></div>
+          </div>
+          <div id="coachCard" class="coach-box">
+            <span class="muted">기존 모델 코칭</span><h3 id="coachHeadline">데이터 확인 중</h3><p id="coachRationale"></p>
+            <div class="coach-meta"><span>타이밍 <b id="timingScore">--</b></span><span>확신도 <b id="confidenceLabel">--</b></span></div>
+            <p class="next-check">다음 확인: <b id="nextCheckpoint">--</b></p>
           </div>
         </div>
-        <div id="coachCard" class="coach-box">
-          <span class="muted">지금 코칭</span>
-          <h3 id="coachHeadline">데이터 확인 중</h3>
-          <p id="coachRationale"></p>
-          <div class="coach-meta">
-            <span>타이밍 점수 <b id="timingScore">--</b></span>
-            <span>확신도 <b id="confidenceLabel">--</b></span>
+        <h2 id="sessionTitle" class="visually-hidden">시장 상태 확인 중</h2>
+      </section>
+
+      <details id="probability-explanation" class="section-block card disclosure-card">
+        <summary><span>상승확률이 이렇게 나온 이유</span><span id="explanationMethod" class="summary-hint">모델 분해</span></summary>
+        <div class="disclosure-body">
+          <div class="probability-breakdown">
+            <div class="breakdown-item"><span>최종 상승확률</span><strong id="breakdownFinal">--</strong></div>
+            <div class="breakdown-item"><span>학습 기준확률</span><strong id="breakdownPrior">--</strong></div>
+            <div class="breakdown-item"><span>원모델 확률</span><strong id="breakdownRaw">--</strong></div>
+            <div class="breakdown-item"><span>원모델 반영비중</span><strong id="breakdownWeight">--</strong></div>
           </div>
-          <p class="next-check">다음 확인: <b id="nextCheckpoint">--</b></p>
+          <p id="explanationSummary" class="explanation-summary">설명 데이터를 불러오는 중입니다.</p>
+          <div class="driver-columns">
+            <section class="driver-panel positive-panel"><h3>상승 쪽 기여</h3><div id="positiveDrivers" class="driver-list"></div></section>
+            <section class="driver-panel negative-panel"><h3>하락 쪽 기여</h3><div id="negativeDrivers" class="driver-list"></div></section>
+          </div>
+          <p id="explanationNote" class="explanation-note"></p>
         </div>
-      </div>
-    </section>
+      </details>
 
-    <section id="decision-summary" class="section-block card decision-summary">
-      <div class="section-title">
-        <h2>지금 판단할 것</h2>
-        <span id="decisionPhase" class="badge">단계 확인 중</span>
-      </div>
-      <p id="decisionPhaseDescription" class="muted"></p>
-      <div class="question-grid">
-        <div><span>1</span><strong>무엇을 관찰할까</strong><p id="whatToWatch">데이터 확인 중</p></div>
-        <div><span>2</span><strong>언제 진입을 검토할까</strong><p id="whenToEnter">09:05 완성 데이터 확인 전 판단 보류</p></div>
-        <div><span>3</span><strong>언제 축소·청산을 검토할까</strong><p id="whenToExit">진입 논리와 구조적 기준 재확인</p></div>
-      </div>
-      <div id="topChecks" class="chip-list"></div>
-      <p class="experiment-warning">종목 확률 모델은 미학습 상태입니다. 프리장 가격과 거래량은 후보 선정 신호이며 본장 방향을 보장하지 않습니다.</p>
-    </section>
-
-    <section id="decision-cards" class="section-block card">
-      <div class="section-title"><h2>종목 의사결정 카드</h2><span class="muted">최대 5개 관찰 후보</span></div>
-      <div id="decisionCardList" class="decision-card-list"></div>
-    </section>
-
-    <section class="section-block card probability-explanation">
-      <div class="section-title"><h2>상승확률이 이렇게 나온 이유</h2><span id="explanationMethod" class="muted">모델 분해</span></div>
-      <div class="probability-breakdown">
-        <div class="breakdown-item"><span>최종 상승확률</span><strong id="breakdownFinal">--</strong></div>
-        <div class="breakdown-item"><span>학습 기준확률</span><strong id="breakdownPrior">--</strong></div>
-        <div class="breakdown-item"><span>원모델 확률</span><strong id="breakdownRaw">--</strong></div>
-        <div class="breakdown-item"><span>원모델 반영비중</span><strong id="breakdownWeight">--</strong></div>
-      </div>
-      <p id="explanationSummary" class="explanation-summary">설명 데이터를 불러오는 중입니다.</p>
-      <div class="driver-columns">
-        <section class="driver-panel positive-panel">
-          <h3>상승 쪽 기여</h3>
-          <div id="positiveDrivers" class="driver-list"></div>
-        </section>
-        <section class="driver-panel negative-panel">
-          <h3>하락 쪽 기여</h3>
-          <div id="negativeDrivers" class="driver-list"></div>
-        </section>
-      </div>
-      <p id="explanationNote" class="explanation-note"></p>
-    </section>
-
-    <section class="section-block card premarket-experiment">
-      <div class="section-title">
-        <h2>개별 종목 NXT 2단계 프레임워크</h2>
-        <div class="experiment-head"><span id="premarketPhase" class="badge">데이터 확인 중</span><span class="badge warning-badge">실험 기능</span></div>
-      </div>
-      <p class="experiment-status">2단계 데이터 수집·피처·검증 프레임워크. 종목 확률 모델은 미학습 상태.</p>
-      <p class="experiment-warning">프리장 가격과 거래량은 후보 선정 신호이며, 본장 방향을 보장하지 않습니다. 확률은 시초가 이후 데이터에 따라 변경될 수 있습니다.</p>
-      <div id="premarketEmpty" class="empty-state">설정된 종목이 없거나 데이터를 아직 수신하지 못했습니다.</div>
-      <div id="premarketContent" class="hidden">
-        <label class="symbol-picker">종목 <select id="premarketSymbolSelect" aria-label="NXT 실험 종목 선택"></select></label>
-        <div class="stage-comparison">
-          <section class="stage-card">
-            <span class="stage-label">장전 예측</span>
-            <strong id="premarketPredictionStatus">확률 산출 불가</strong>
-            <dl id="premarketProbabilities" class="metric-list compact"></dl>
-          </section>
-          <section class="stage-card">
-            <span class="stage-label">09:05 확인 후 업데이트</span>
-            <strong id="postOpenPredictionStatus">업데이트 확률 산출 전</strong>
-            <dl id="postOpenProbabilities" class="metric-list compact"></dl>
-          </section>
+      <details id="kospi-model-lab" class="section-block card disclosure-card">
+        <summary><span>KOSPI Model Lab</span><span id="kospiModelStatus" class="badge">검증 상태 확인 중</span></summary>
+        <div class="disclosure-body">
+          <div id="kospiModelMetrics" class="model-lab kospi-model-metrics"></div>
+          <p id="kospiModelScope" class="explanation-note"></p>
+          <h3 class="subsection-title">라이브 예측 원장</h3>
+          <div class="table-wrap"><table class="ledger-table"><thead><tr><th>생성 시각</th><th>체크포인트</th><th>Gate</th><th>당일 종가↑</th><th>현재→종가↑</th><th>시장 폭</th><th>편중 위험</th><th>보류</th></tr></thead><tbody id="kospiPredictionLedger"></tbody></table></div>
+          <p id="kospiLedgerStatus" class="explanation-note"></p>
         </div>
-        <div class="experiment-grid">
-          <section class="experiment-panel"><h3>프리장 요약</h3><dl id="premarketMetrics" class="metric-list compact"></dl></section>
-          <section class="experiment-panel"><h3>동시호가</h3><dl id="auctionMetrics" class="metric-list compact"></dl></section>
-          <section class="experiment-panel"><h3>첫 5분 확인</h3><dl id="openingMetrics" class="metric-list compact"></dl></section>
+      </details>
+
+      <details id="data-lab" class="section-block card disclosure-card">
+        <summary><span>종목 Data Lab</span><span class="badge warning-badge">백테스트 미수행</span></summary>
+        <div class="disclosure-body">
+          <div class="table-wrap"><table><thead><tr><th>종목</th><th>거래일</th><th>프리장</th><th>동시호가</th><th>첫 5분</th><th>09:30 라벨</th><th>종가 라벨</th><th>완전성</th><th>학습까지</th></tr></thead><tbody id="dataLabBody"></tbody></table></div>
+          <div id="modelLab" class="model-lab"></div>
         </div>
-        <div class="driver-columns">
-          <section class="driver-panel positive-panel"><h3>상승 가능성을 높인 참고 요인</h3><div id="premarketPositiveFactors" class="driver-list"></div></section>
-          <section class="driver-panel negative-panel"><h3>하락·위험 참고 요인</h3><div id="premarketNegativeFactors" class="driver-list"></div></section>
-        </div>
-        <p id="premarketDataNote" class="explanation-note"></p>
+      </details>
+
+      <details class="section-block card disclosure-card">
+        <summary><span>Shadow 모의매매 기록</span><span class="summary-hint">실제 주문 없음</span></summary>
+        <div id="shadowRecords" class="list disclosure-body"></div>
+      </details>
+
+      <details id="operations" class="section-block card disclosure-card">
+        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.2</span></summary>
+        <div class="disclosure-body"><dl id="operationsMetrics" class="metric-list"></dl><p class="explanation-note">최신 데이터는 Netlify의 정적 dashboard.json을 확인합니다. 앱 다시 받기는 서비스워커와 화면 파일을 갱신한 뒤 페이지를 다시 엽니다.</p></div>
+      </details>
+
+      <div class="two-column research-health-grid">
+        <details class="card section-block disclosure-card"><summary><span>모델 건강도</span><span id="modelStatus" class="badge"></span></summary><div class="disclosure-body"><dl id="modelMetrics" class="metric-list"></dl></div></details>
+        <details class="card section-block disclosure-card"><summary><span>데이터 상태</span><span id="officialBadge" class="badge"></span></summary><div class="disclosure-body"><dl id="dataMetrics" class="metric-list"></dl><div id="warningList" class="warning-list"></div></div></details>
       </div>
-    </section>
 
-    <section class="section-block card">
-      <div class="section-title"><h2>한눈에 보는 핵심</h2><span class="muted">모델·시장·뉴스 종합</span></div>
-      <div id="briefingList" class="briefing-grid"></div>
-    </section>
-
-    <section class="section-block">
-      <div class="section-title"><h2>시장 스냅샷</h2><span id="dataSource" class="muted"></span></div>
-      <div id="marketGrid" class="market-grid"></div>
-    </section>
-
-    <section class="section-block card">
-      <div class="section-title"><h2>오늘의 체크포인트</h2><span class="muted">시간대별 코칭</span></div>
-      <div id="timeline" class="timeline"></div>
-    </section>
-
-    <section class="two-column">
-      <section id="news-section" class="card section-block">
-        <div class="section-title"><h2>주요 기사·공시</h2><span id="disclosureAvailability" class="muted">시각·출처 확인</span></div>
-        <div id="newsList" class="list"></div>
-      </section>
-      <section class="card section-block">
-        <div class="section-title"><h2>주요 발표</h2><span class="muted">향후 7일</span></div>
-        <div id="eventList" class="list"></div>
-      </section>
-    </section>
-
-    <section id="post-market" class="section-block">
-      <div class="section-title"><h2>마감·애프터마켓·익일 관찰</h2><span class="muted">없는 값은 0으로 대체하지 않음</span></div>
-      <div class="post-market-grid">
-        <section class="card post-card"><h3>정규장 마감 분석</h3><div id="closingReview"></div></section>
-        <section class="card post-card"><h3>NXT 애프터마켓</h3><div id="aftermarketReview"></div></section>
-        <section class="card post-card"><h3>20:05 다음날 관찰</h3><div id="nextDayWatch"></div></section>
-      </div>
-    </section>
-
-    <section id="kospi-model-lab" class="section-block card">
-      <div class="section-title"><h2>KOSPI Model Lab</h2><span id="kospiModelStatus" class="badge">검증 상태 확인 중</span></div>
-      <div id="kospiModelMetrics" class="model-lab kospi-model-metrics"></div>
-      <p id="kospiModelScope" class="explanation-note"></p>
-      <h3 class="subsection-title">라이브 예측 원장</h3>
-      <div class="table-wrap"><table class="ledger-table"><thead><tr><th>생성 시각</th><th>체크포인트</th><th>Gate</th><th>당일 종가↑</th><th>현재→종가↑</th><th>시장 폭</th><th>편중 위험</th><th>보류</th></tr></thead><tbody id="kospiPredictionLedger"></tbody></table></div>
-      <p id="kospiLedgerStatus" class="explanation-note"></p>
-    </section>
-
-    <section id="data-lab" class="section-block card">
-      <div class="section-title"><h2>Data Lab</h2><span class="badge warning-badge">백테스트 미수행</span></div>
-      <div class="table-wrap"><table><thead><tr><th>종목</th><th>거래일</th><th>프리장</th><th>동시호가</th><th>첫 5분</th><th>09:30 라벨</th><th>종가 라벨</th><th>완전성</th><th>학습까지</th></tr></thead><tbody id="dataLabBody"></tbody></table></div>
-      <div id="modelLab" class="model-lab"></div>
-    </section>
-
-    <section class="section-block card">
-      <div class="section-title"><h2>Shadow 모의매매 기록</h2><span class="muted">실제 주문 없음</span></div>
-      <div id="shadowRecords" class="list"></div>
-    </section>
-
-    <section id="operations" class="section-block card">
-      <div class="section-title"><h2>수집·배포 상태</h2><span id="versionBadge" class="badge">v5</span></div>
-      <dl id="operationsMetrics" class="metric-list"></dl>
-      <p class="explanation-note">화면 새로고침은 현재 받은 데이터를 다시 그립니다. 최신 배포 확인은 Netlify의 정적 dashboard.json만 확인하며 브라우저에서 KIS API를 호출하지 않습니다.</p>
-    </section>
-
-    <section class="two-column">
-      <section class="card section-block">
-        <div class="section-title"><h2>모델 건강도</h2><span id="modelStatus" class="badge"></span></div>
-        <dl id="modelMetrics" class="metric-list"></dl>
-      </section>
-      <section class="card section-block">
-        <div class="section-title"><h2>데이터 상태</h2><span id="officialBadge" class="badge"></span></div>
-        <dl id="dataMetrics" class="metric-list"></dl>
-        <div id="warningList" class="warning-list"></div>
-      </section>
-    </section>
-
-    <section class="notice">
-      <strong>연구용 코칭</strong>
-      <p>이 앱은 자동주문이나 수익 보장 도구가 아닙니다. 종목 신호 게이트가 닫혀 있으면 관찰·대기만 표시하며 직접적인 매매 권고를 제공하지 않습니다.</p>
-    </section>
+      <section class="notice"><strong>연구용 코칭</strong><p>이 앱은 자동주문이나 수익 보장 도구가 아닙니다. 종목 신호 게이트가 닫혀 있으면 관찰·대기만 표시하며 직접적인 매매 권고를 제공하지 않습니다.</p></section>
+    </div>
   </main>
+
+  <aside class="decision-dock" aria-label="현재 판단 요약">
+    <div class="dock-decision"><span id="dockGateStatus">UNAVAILABLE</span><strong id="dockAction">매매 보류</strong></div>
+    <div class="dock-next"><span>다음 판단</span><strong id="dockNextCheckpoint">확인 중</strong></div>
+    <button id="refreshButton" type="button">최신 데이터</button>
+  </aside>
 
   <div id="errorToast" class="toast hidden"></div>
   <script src="data/initial-data.js"></script>
