@@ -1,0 +1,186 @@
+name: Deploy KOSPI App via Netlify Build API
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kospi-shadow-pr-netlify-api-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-production:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      PRODUCTION_URL: https://joyful-crostata-e96663.netlify.app
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Resolve production site ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites?per_page=100" \
+            -o /tmp/netlify-sites.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          target = os.environ["PRODUCTION_URL"].rstrip("/")
+          sites = json.loads(Path("/tmp/netlify-sites.json").read_text(encoding="utf-8"))
+          matches = [s for s in sites if target in {str(s.get("url") or "").rstrip("/"), str(s.get("ssl_url") or "").rstrip("/")}]
+          if len(matches) != 1:
+              raise SystemExit(f"Expected one production site, found {len(matches)}")
+          Path("/tmp/site-id.txt").write_text(str(matches[0]["id"]), encoding="utf-8")
+          print(f"Resolved site {matches[0].get('name')}")
+          PY
+
+      - name: Build latest shell package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site outputs
+          mkdir -p site/data outputs
+          cp -R app/. site/
+
+          curl --fail --silent --show-error \
+            --retry 4 --retry-delay 3 \
+            -H "Cache-Control: no-cache" \
+            "$PRODUCTION_URL/data/dashboard.json?source_sha=$EXPECTED_SHA" \
+            -o outputs/production-dashboard.json
+          curl --fail --silent --show-error \
+            --retry 2 --retry-delay 2 \
+            -H "Cache-Control: no-cache" \
+            "$PRODUCTION_URL/data/history.json?source_sha=$EXPECTED_SHA" \
+            -o site/data/history.json \
+            || printf '[]\n' > site/data/history.json
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          dashboard = json.loads(Path("outputs/production-dashboard.json").read_text(encoding="utf-8"))
+          previous_generated_at = dashboard.get("generated_at_seoul")
+          dashboard["app_version"] = "5.3.1"
+          dashboard["build_sha"] = os.environ["EXPECTED_SHA"]
+          dashboard["app_shell_deployment"] = {
+              "mode": "shell_only_api_build",
+              "updated_at_seoul": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
+              "source_generated_at_seoul": previous_generated_at,
+              "source": "last_successful_production_snapshot",
+          }
+          quality = dashboard.setdefault("data_quality", {})
+          warnings = list(quality.get("warnings") or [])
+          notice = "앱 화면은 최신 커밋으로 갱신됐으며 시장 데이터는 마지막 정상 스냅샷을 유지합니다."
+          if notice not in warnings:
+              warnings.append(notice)
+          quality["warnings"] = warnings
+          Path("site/data/dashboard.json").write_text(json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8")
+          escaped = json.dumps(dashboard, ensure_ascii=False).replace("</", "<\\/")
+          Path("site/data/initial-data.js").write_text(f"window.__INITIAL_DASHBOARD__ = {escaped};\n", encoding="utf-8")
+          PY
+
+          node --check site/app.js
+          node --check site/sw.js
+          grep -q "v5.3.1" site/index.html
+          (cd site && zip -qr ../outputs/site.zip .)
+          test -s outputs/site.zip
+
+      - name: Upload production ZIP through Netlify build API
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE_ID="$(cat /tmp/site-id.txt)"
+          title="KOSPI API shell $EXPECTED_SHA"
+          http_code=$(curl --silent --show-error \
+            --output outputs/build-response.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary @outputs/site.zip \
+            "https://api.netlify.com/api/v1/sites/$SITE_ID/builds?clear_cache=true&title=$title" || true)
+          echo "BUILD_API_HTTP=$http_code"
+          cat outputs/build-response.json
+          test "$http_code" = "200"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("outputs/build-response.json").read_text(encoding="utf-8"))
+          build_id = payload.get("id")
+          if not build_id:
+              raise SystemExit(f"No build id: {payload}")
+          Path("/tmp/build-id.txt").write_text(str(build_id), encoding="utf-8")
+          PY
+
+      - name: Wait for Netlify build completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_ID="$(cat /tmp/build-id.txt)"
+          completed=0
+          for attempt in $(seq 1 60); do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              "https://api.netlify.com/api/v1/builds/$BUILD_ID" \
+              -o outputs/build-status.json
+            result=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("outputs/build-status.json").read_text(encoding="utf-8"))
+          if payload.get("error"):
+              print("error:" + str(payload.get("error")))
+          elif payload.get("done"):
+              print("done")
+          else:
+              print("pending")
+          PY
+            )
+            echo "Build status: $result"
+            if [ "$result" = "done" ]; then
+              completed=1
+              break
+            fi
+            case "$result" in error:*) exit 31;; esac
+            sleep 5
+          done
+          test "$completed" -eq 1
+
+      - name: Verify live production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          verified=0
+          for attempt in $(seq 1 24); do
+            curl --fail --silent --show-error -H "Cache-Control: no-cache" \
+              "$PRODUCTION_URL/index.html?sha=$EXPECTED_SHA&attempt=$attempt" -o outputs/live-index.html || true
+            curl --fail --silent --show-error -H "Cache-Control: no-cache" \
+              "$PRODUCTION_URL/data/dashboard.json?sha=$EXPECTED_SHA&attempt=$attempt" -o outputs/live-dashboard.json || true
+            if grep -q "v5.3.1" outputs/live-index.html 2>/dev/null; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")' 2>/dev/null || true)
+              if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
