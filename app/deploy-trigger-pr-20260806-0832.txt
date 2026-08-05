@@ -2,3 +2,4 @@ Trigger PR-observable Netlify production deployment.
 Expected app version: v5.3.1
 Requested at: 2026-08-06T08:32:00+09:00
 Retry requested at: 2026-08-06T08:37:00+09:00
+Resolved-site retry at: 2026-08-06T08:41:00+09:00
