@@ -111,7 +111,20 @@ jobs:
           test -n "$NETLIFY_SITE_ID" || { echo "NETLIFY_SITE_ID is missing"; exit 2; }
       - run: pip install .
       - name: Refresh prediction and build session-aware PWA
-        run: kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+        id: coach-build
+        shell: bash
+        run: |
+          set +e
+          kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+          refresh_status=$?
+          set -e
+          if [ "$refresh_status" -ne 0 ]; then
+            echo "::warning::Prediction refresh failed with exit code $refresh_status. Building and deploying the latest available fail-closed snapshot instead."
+            kospi-shadow-coach --config config/default.yml --project-root .
+            echo "refresh_mode=fallback" >> "$GITHUB_OUTPUT"
+          else
+            echo "refresh_mode=refreshed" >> "$GITHUB_OUTPUT"
+          fi
       - name: Persist normalized and raw premarket history
         shell: bash
         run: |
@@ -132,12 +145,30 @@ jobs:
           test -f site/_headers
           node --check site/app.js
           node --check site/sw.js
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          expected_sha = os.environ["GITHUB_SHA"]
+          actual_sha = dashboard.get("build_sha")
+          if actual_sha != expected_sha:
+              raise SystemExit(f"dashboard build_sha mismatch before deploy: expected {expected_sha}, got {actual_sha}")
+          if dashboard.get("app_version") != "5.3.1":
+              raise SystemExit(f"unexpected app_version: {dashboard.get('app_version')}")
+          PY
       - name: Publish summary
         shell: bash
         run: |
           {
-            cat outputs/daily_brief.md
+            if [ -f outputs/daily_brief.md ]; then
+              cat outputs/daily_brief.md
+            else
+              echo "Prediction refresh output was unavailable; deployed a fail-closed app snapshot."
+            fi
             echo ""
+            echo "Coach build mode: ${{ steps.coach-build.outputs.refresh_mode }}"
             echo "Coach PWA generated and queued for Netlify production deployment."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload installable app artifact
@@ -150,7 +181,7 @@ jobs:
       - name: Deploy latest dashboard to Netlify production
         shell: bash
         run: |
-          npx --yes netlify-cli@latest deploy \
+          npx --yes netlify-cli@26.2.0 deploy \
             --prod \
             --no-build \
             --dir=site \
@@ -159,6 +190,50 @@ jobs:
             --message="KOSPI Coach run $GITHUB_RUN_NUMBER ($GITHUB_SHA)" \
             --timeout=10m \
             --json | tee outputs/netlify-deploy.json
+      - name: Verify deployed Netlify files
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("outputs/netlify-deploy.json").read_text(encoding="utf-8"))
+          url = payload.get("deploy_url") or payload.get("ssl_url") or payload.get("url")
+          if not url:
+              raise SystemExit(f"Netlify deploy response has no deploy URL: {payload}")
+          Path("outputs/netlify-deploy-url.txt").write_text(url.rstrip("/"), encoding="utf-8")
+          PY
+          deploy_url="$(cat outputs/netlify-deploy-url.txt)"
+          verified=0
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "$deploy_url/index.html?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/deployed-index.html \
+              && curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "$deploy_url/data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/deployed-dashboard.json; then
+              verified=1
+              break
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
+          grep -q "v5.3.1" outputs/deployed-index.html
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("outputs/deployed-dashboard.json").read_text(encoding="utf-8"))
+          expected_sha = os.environ["GITHUB_SHA"]
+          actual_sha = dashboard.get("build_sha")
+          if actual_sha != expected_sha:
+              raise SystemExit(f"deployed dashboard is stale: expected {expected_sha}, got {actual_sha}")
+          if dashboard.get("app_version") != "5.3.1":
+              raise SystemExit(f"deployed app version mismatch: {dashboard.get('app_version')}")
+          PY
       - name: Record Netlify deployment
         if: always()
         shell: bash
