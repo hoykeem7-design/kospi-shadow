@@ -6,13 +6,14 @@ on:
     branches:
       - main
     paths:
+      - "scripts/fast_live_market.py"
       - ".github/workflows/live-market-pages.yml"
   schedule:
     # 08:00-08:50 KST, Monday-Friday
     - cron: "*/10 23 * * 0-4"
     # 09:00-15:50 KST, Monday-Friday
     - cron: "*/10 0-6 * * 1-5"
-    # 16:00-20:00 KST, Monday-Friday
+    # 16:00-20:40 KST, Monday-Friday
     - cron: "*/20 7-11 * * 1-5"
 
 permissions:
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   refresh-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -47,7 +48,7 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Verify live market credentials
+      - name: Verify KIS credentials
         shell: bash
         run: |
           test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 23; }
@@ -55,110 +56,34 @@ jobs:
 
       - run: pip install .
 
-      - name: Download last verified dashboard as model baseline
+      - name: Build current KIS market snapshot
+        shell: bash
+        run: python scripts/fast_live_market.py
+
+      - name: Validate Pages package
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p outputs
-          curl --fail --silent --show-error \
-            --retry 4 --retry-delay 3 \
-            -H "Cache-Control: no-cache" \
-            "$PAGE_URL/data/dashboard.json?seed=$GITHUB_SHA" \
-            -o outputs/base-dashboard.json
-
-      - name: Reconstruct the minimum model snapshot
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          base = json.loads(Path("outputs/base-dashboard.json").read_text(encoding="utf-8"))
-          validation = base.get("validation") or {}
-          quality = base.get("data_quality") or {}
-          metrics = {
-              "latest_prediction": base.get("prediction") or {},
-              "promotion": base.get("promotion") or {"signal_enabled": False, "status": "RESTRICTED_SHADOW", "checks": {}},
-              "data_manifest": {
-                  "target_provider": quality.get("target_provider"),
-                  "target_official": quality.get("target_official"),
-                  "target_latest_source": quality.get("latest_source"),
-                  "target_date_max": quality.get("target_date_max"),
-                  "collection_warnings": list(quality.get("warnings") or []),
-              },
-              "classification": {
-                  "roc_auc": validation.get("roc_auc"),
-                  "brier": validation.get("brier"),
-                  "baseline_brier": validation.get("baseline_brier"),
-                  "brier_improvement": validation.get("brier_improvement"),
-                  "n": validation.get("oos_n"),
-              },
-              "strategy_proxy": {
-                  "model": {
-                      "annualized_sharpe": validation.get("strategy_sharpe"),
-                      "max_drawdown": validation.get("max_drawdown"),
-                  }
-              },
-          }
-          if not metrics["latest_prediction"]:
-              raise SystemExit("Base dashboard has no prediction snapshot")
-          Path("outputs/metrics.json").write_text(
-              json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
-          )
-          Path("outputs/base-generated-at.txt").write_text(
-              str(base.get("generated_at_seoul") or "unknown"), encoding="utf-8"
-          )
-          PY
-
-      - name: Fetch current KIS market data and build app
-        shell: bash
-        run: |
-          set -euo pipefail
-          kospi-shadow-coach --config config/default.yml --project-root .
-
-      - name: Mark model reuse and validate KIS snapshot
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          path = Path("site/data/dashboard.json")
-          dashboard = json.loads(path.read_text(encoding="utf-8"))
-          base_generated_at = Path("outputs/base-generated-at.txt").read_text(encoding="utf-8").strip()
-          market = dashboard.get("market") or {}
-          index = market.get("kospi")
-          futures = market.get("kospi200_futures")
-          if not index and not futures:
-              warnings = (dashboard.get("data_quality") or {}).get("warnings") or []
-              raise SystemExit("KIS live market snapshot unavailable: " + " | ".join(map(str, warnings)))
-
-          dashboard["market_refresh"] = {
-              "mode": "fast_live_market_only",
-              "model_snapshot_reused": True,
-              "model_snapshot_source_generated_at_seoul": base_generated_at,
-              "note": "현물·선물·거래순위는 현재 KIS 데이터이며 모델 확률은 마지막 검증 스냅샷을 재사용합니다.",
-          }
-          quality = dashboard.setdefault("data_quality", {})
-          warnings = list(quality.get("warnings") or [])
-          notice = "KIS 시장 데이터는 갱신됐지만 모델 확률은 마지막 검증 스냅샷입니다. 오래된 모델이면 매매 허가를 내리지 않습니다."
-          if notice not in warnings:
-              warnings.append(notice)
-          quality["warnings"] = warnings
-
-          path.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2), encoding="utf-8")
-          escaped = json.dumps(dashboard, ensure_ascii=False).replace("</", "<\\/")
-          Path("site/data/initial-data.js").write_text(
-              f"window.__INITIAL_DASHBOARD__ = {escaped};\n", encoding="utf-8"
-          )
-
-          print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
-          print("KOSPI=" + json.dumps(index, ensure_ascii=False))
-          print("FUTURES=" + json.dumps(futures, ensure_ascii=False))
-          PY
-          touch site/.nojekyll
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/sw.js
+          test -f site/data/dashboard.json
           node --check site/app.js
           node --check site/sw.js
+          touch site/.nojekyll
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          if dashboard.get("build_sha") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("dashboard build SHA mismatch")
+          market = dashboard.get("market") or {}
+          if not market.get("kospi") and not market.get("kospi200_futures"):
+              raise SystemExit("KIS market snapshot is empty")
+          print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
+          PY
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
@@ -175,14 +100,13 @@ jobs:
           DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           set -euo pipefail
-          mkdir -p outputs
           verified=0
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error \
                 -H "Cache-Control: no-cache" \
                 "${DEPLOYED_URL}data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
-                -o outputs/live-dashboard.json; then
-              LIVE_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
+                -o /tmp/live-dashboard.json; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("/tmp/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
               if [ "$LIVE_SHA" = "$GITHUB_SHA" ]; then
                 verified=1
                 break
@@ -196,8 +120,9 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          clean: false
 
-      - name: Record fast market deployment
+      - name: Record verified fast market deployment
         shell: bash
         env:
           DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
@@ -210,7 +135,7 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
-          live = json.loads(Path("outputs/live-dashboard.json").read_text(encoding="utf-8"))
+          live = json.loads(Path("/tmp/live-dashboard.json").read_text(encoding="utf-8"))
           market = live.get("market") or {}
           status = {
               "status": "success",
