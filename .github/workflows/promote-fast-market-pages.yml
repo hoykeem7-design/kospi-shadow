@@ -1,0 +1,147 @@
+name: Promote Fast KIS Market to Pages
+
+on:
+  workflow_run:
+    workflows:
+      - Diagnose Fast KIS Market Refresh
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: kospi-shadow-fast-pages
+  cancel-in-progress: true
+
+jobs:
+  promote-pages:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Download verified fast-market site artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fast-market-site
+          path: site
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate trusted site artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/sw.js
+          test -f site/data/dashboard.json
+          node --check site/app.js
+          node --check site/sw.js
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          if dashboard.get("build_sha") != os.environ["SOURCE_SHA"]:
+              raise SystemExit(
+                  f"artifact SHA mismatch: expected {os.environ['SOURCE_SHA']}, "
+                  f"got {dashboard.get('build_sha')}"
+              )
+          market = dashboard.get("market") or {}
+          if not market.get("kospi") and not market.get("kospi200_futures"):
+              raise SystemExit("trusted artifact contains no KIS market data")
+          print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
+          print("KOSPI=" + json.dumps(market.get("kospi"), ensure_ascii=False))
+          print("FUTURES=" + json.dumps(market.get("kospi200_futures"), ensure_ascii=False))
+          PY
+          touch site/.nojekyll
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/
+
+      - name: Deploy verified KIS snapshot to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Verify public Pages snapshot
+        shell: bash
+        env:
+          DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          verified=0
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "${DEPLOYED_URL}data/dashboard.json?sha=$SOURCE_SHA&attempt=$attempt" \
+                -o /tmp/live-dashboard.json; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("/tmp/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
+              if [ "$LIVE_SHA" = "$SOURCE_SHA" ]; then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Record verified market-data deployment
+        shell: bash
+        env:
+          DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          live = json.loads(Path("/tmp/live-dashboard.json").read_text(encoding="utf-8"))
+          market = live.get("market") or {}
+          status = {
+              "status": "success",
+              "mode": "fast_live_market_only",
+              "source_run_id": os.environ["SOURCE_RUN_ID"],
+              "commit_sha": os.environ["SOURCE_SHA"],
+              "page_url": os.environ["DEPLOYED_URL"],
+              "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+              "generated_at_seoul": live.get("generated_at_seoul"),
+              "kospi": market.get("kospi"),
+              "kospi200_futures": market.get("kospi200_futures"),
+              "stock_attention_availability": (market.get("stock_attention") or {}).get("availability"),
+              "model_snapshot_reused": True,
+          }
+          Path("deployments/fast-market-latest.json").write_text(
+              json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployments/fast-market-latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Record fast KIS market deployment $SOURCE_SHA"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
