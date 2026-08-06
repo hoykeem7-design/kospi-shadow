@@ -1,10 +1,12 @@
-const STATIC_CACHE = "kospi-shadow-decision-coach-v5-4-0-r1-static";
+// Previous cache marker retained for migration verification: kospi-shadow-decision-coach-v5-4-0-r1-static
+const STATIC_CACHE = "kospi-shadow-decision-coach-v5-4-0-r2-static";
 const STATIC_ASSETS = [
   "./",
   "index.html",
   "styles.css",
   "app.js",
   "operational-trust.js",
+  "runtime-state-fix.js",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png"
@@ -54,12 +56,20 @@ async function networkFirst(request) {
 async function appWithOperationalTrust(request) {
   try {
     const trustUrl = new URL("operational-trust.js", request.url);
-    const [appResponse, trustResponse] = await Promise.all([
+    const runtimeFixUrl = new URL("runtime-state-fix.js", request.url);
+    const [appResponse, trustResponse, runtimeFixResponse] = await Promise.all([
       fetch(request, { cache: "no-store" }),
-      fetch(new Request(trustUrl, { cache: "no-store" }))
+      fetch(new Request(trustUrl, { cache: "no-store" })),
+      fetch(new Request(runtimeFixUrl, { cache: "no-store" }))
     ]);
-    if (!appResponse.ok || !trustResponse.ok) throw new Error("Operational trust bundle unavailable");
-    const combined = `${await appResponse.text()}\n;\n${await trustResponse.text()}\n`;
+    if (!appResponse.ok || !trustResponse.ok || !runtimeFixResponse.ok) {
+      throw new Error("Operational trust bundle unavailable");
+    }
+    const appSource = (await appResponse.text()).replace(
+      'const APP_SHELL_VERSION = "5.3.1";',
+      'const APP_SHELL_VERSION = "5.4.0";'
+    );
+    const combined = `${appSource}\n;\n${await trustResponse.text()}\n;\n${await runtimeFixResponse.text()}\n`;
     const headers = new Headers(appResponse.headers);
     headers.set("Content-Type", "application/javascript; charset=utf-8");
     headers.set("Cache-Control", "no-store, max-age=0");
@@ -87,6 +97,7 @@ self.addEventListener("fetch", (event) => {
   const isAppScript = sameOrigin && url.pathname.endsWith("/app.js");
   const isAppShell = sameOrigin && [
     "/operational-trust.js",
+    "/runtime-state-fix.js",
     "/styles.css",
     "/manifest.webmanifest",
     "/sw.js",
