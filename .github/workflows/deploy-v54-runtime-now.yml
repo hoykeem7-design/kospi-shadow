@@ -1,0 +1,170 @@
+name: Deploy v5.4 Runtime Fix Now
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/deploy-v54-now.trigger"
+      - ".github/workflows/deploy-v54-runtime-now.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build v5.4 app shell with last published market snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site outputs
+          mkdir -p site/data outputs
+          cp -R app/. site/
+
+          PAGE_ROOT="https://hoykeem7-design.github.io/kospi-shadow"
+          curl --fail --silent --show-error --retry 6 --retry-delay 3 \
+            -H "Cache-Control: no-cache" \
+            "$PAGE_ROOT/data/dashboard.json?runtime_fix=$GITHUB_SHA" \
+            -o site/data/dashboard.json
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            -H "Cache-Control: no-cache" \
+            "$PAGE_ROOT/data/history.json?runtime_fix=$GITHUB_SHA" \
+            -o site/data/history.json \
+            || printf '[]\n' > site/data/history.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          dashboard["app_version"] = "5.4.0"
+          escaped = json.dumps(dashboard, ensure_ascii=False).replace("</", "<\\/")
+          Path("site/data/dashboard.json").write_text(
+              json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          Path("site/data/initial-data.js").write_text(
+              f"window.__INITIAL_DASHBOARD__ = {escaped};\n",
+              encoding="utf-8",
+          )
+          PY
+
+          touch site/.nojekyll
+
+      - name: Validate runtime package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f site/index.html
+          test -f site/app.js
+          test -f site/operational-trust.js
+          test -f site/runtime-state-fix.js
+          test -f site/sw.js
+          test -f site/data/dashboard.json
+          test -f site/data/initial-data.js
+          node --check site/app.js
+          node --check site/operational-trust.js
+          node --check site/runtime-state-fix.js
+          node --check site/sw.js
+          grep -q "PREP · 오늘 예측 준비 중" site/runtime-state-fix.js
+          grep -q "kospi-shadow-decision-coach-v5-4-0-r2-static" site/sw.js
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy runtime fix to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Verify live runtime fix
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          verified=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "${PAGE_URL}runtime-state-fix.js?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/runtime-state-fix.js \
+              && curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "${PAGE_URL}sw.js?sha=$GITHUB_SHA&attempt=$attempt" \
+                -o outputs/sw.js; then
+              if grep -q "PREP · 오늘 예측 준비 중" outputs/runtime-state-fix.js \
+                && grep -q "kospi-shadow-decision-coach-v5-4-0-r2-static" outputs/sw.js; then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Record verified runtime deployment
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          result = {
+              "status": "success",
+              "commit_sha": os.environ["GITHUB_SHA"],
+              "page_url": os.environ["PAGE_URL"],
+              "app_version": "5.4.0",
+              "runtime_state": "premarket_prep_enabled",
+              "service_worker_cache": "kospi-shadow-decision-coach-v5-4-0-r2-static",
+              "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+          }
+          Path("deployments/runtime-fix-latest.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployments/runtime-fix-latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Record v5.4 runtime Pages deployment"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
