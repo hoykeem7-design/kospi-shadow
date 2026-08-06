@@ -10,6 +10,12 @@ from kospi_shadow.coach import generate_coach_app
 from kospi_shadow.config import load_settings
 
 
+APP_VERSION = "5.4.0"
+OFFICIAL_APP_URL = "https://hoykeem7-design.github.io/kospi-shadow/"
+MARKET_STALE_AFTER_MINUTES = 15
+MODEL_STALE_AFTER_DAYS = 8
+
+
 def _deployment_sha() -> str | None:
     return (os.getenv("SOURCE_SHA") or os.getenv("GITHUB_SHA") or "").strip() or None
 
@@ -79,6 +85,7 @@ def _rewrite_dashboard(project_root: Path, dashboard: dict, base_generated_at: s
         raise RuntimeError("KIS live snapshot unavailable: " + " | ".join(map(str, warnings)))
 
     source_sha = _deployment_sha()
+    dashboard["app_version"] = APP_VERSION
     if source_sha:
         dashboard["build_sha"] = source_sha
 
@@ -88,6 +95,18 @@ def _rewrite_dashboard(project_root: Path, dashboard: dict, base_generated_at: s
         "model_snapshot_source_generated_at_seoul": base_generated_at,
         "source_sha": source_sha,
         "note": "현물·선물·거래순위는 현재 KIS 데이터이며 모델 확률은 마지막 검증 스냅샷을 재사용합니다.",
+    }
+    dashboard["operational_trust"] = {
+        "schema_version": 1,
+        "official_app_url": OFFICIAL_APP_URL,
+        "official_host": "hoykeem7-design.github.io",
+        "official_path": "/kospi-shadow/",
+        "market_stale_after_minutes": MARKET_STALE_AFTER_MINUTES,
+        "model_stale_after_days": MODEL_STALE_AFTER_DAYS,
+        "market_timestamp_fields": ["market.kospi.received_at", "market.kospi200_futures.received_at"],
+        "model_timestamp_field": "market_refresh.model_snapshot_source_generated_at_seoul",
+        "news_timestamp_fields": ["news.received_at", "news.published_at_kst"],
+        "trade_lock_policy": "장중 현물·선물 중 하나라도 미수신이거나 15분 초과 지연이면 DATA_STALE로 신규 매매 판단을 잠급니다.",
     }
     quality = dashboard.setdefault("data_quality", {})
     warnings = list(quality.get("warnings") or [])
@@ -112,9 +131,7 @@ def _rewrite_dashboard(project_root: Path, dashboard: dict, base_generated_at: s
 
 def main() -> None:
     project_root = Path(os.getenv("PROJECT_ROOT", ".")).resolve()
-    page_url = os.getenv(
-        "PAGE_URL", "https://hoykeem7-design.github.io/kospi-shadow/"
-    )
+    page_url = os.getenv("PAGE_URL", OFFICIAL_APP_URL)
     base = _load_base_dashboard(page_url)
     _write_minimum_metrics(base, project_root / "outputs")
     settings = load_settings(project_root / "config" / "default.yml")
@@ -125,6 +142,7 @@ def main() -> None:
     print(
         json.dumps(
             {
+                "app_version": dashboard.get("app_version"),
                 "generated_at_seoul": dashboard.get("generated_at_seoul"),
                 "build_sha": dashboard.get("build_sha"),
                 "kospi": market.get("kospi"),
@@ -133,6 +151,7 @@ def main() -> None:
                     market.get("stock_attention") or {}
                 ).get("availability"),
                 "model_snapshot_reused": True,
+                "operational_trust": dashboard.get("operational_trust"),
             },
             ensure_ascii=False,
             indent=2,
