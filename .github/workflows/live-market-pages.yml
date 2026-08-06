@@ -6,7 +6,9 @@ on:
     branches:
       - main
     paths:
+      - "app/**"
       - "scripts/fast_live_market.py"
+      - "pyproject.toml"
       - ".github/workflows/live-market-pages.yml"
   schedule:
     # 08:00-08:50 KST, Monday-Friday
@@ -66,9 +68,11 @@ jobs:
           set -euo pipefail
           test -f site/index.html
           test -f site/app.js
+          test -f site/operational-trust.js
           test -f site/sw.js
           test -f site/data/dashboard.json
           node --check site/app.js
+          node --check site/operational-trust.js
           node --check site/sw.js
           touch site/.nojekyll
           python - <<'PY'
@@ -79,10 +83,16 @@ jobs:
           dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
           if dashboard.get("build_sha") != os.environ["GITHUB_SHA"]:
               raise SystemExit("dashboard build SHA mismatch")
+          if dashboard.get("app_version") != "5.4.0":
+              raise SystemExit(f"unexpected app version: {dashboard.get('app_version')}")
+          trust = dashboard.get("operational_trust") or {}
+          if trust.get("market_stale_after_minutes") != 15:
+              raise SystemExit("v5.4 operational trust policy is missing")
           market = dashboard.get("market") or {}
           if not market.get("kospi") and not market.get("kospi200_futures"):
               raise SystemExit("KIS market snapshot is empty")
           print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
+          print("APP_VERSION=" + str(dashboard.get("app_version")))
           PY
 
       - name: Upload GitHub Pages artifact
@@ -106,8 +116,17 @@ jobs:
                 -H "Cache-Control: no-cache" \
                 "${DEPLOYED_URL}data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
                 -o /tmp/live-dashboard.json; then
-              LIVE_SHA=$(python -c 'import json; print(json.load(open("/tmp/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
-              if [ "$LIVE_SHA" = "$GITHUB_SHA" ]; then
+              readarray -t LIVE_VALUES < <(python - <<'PY'
+          import json
+          payload = json.load(open("/tmp/live-dashboard.json", encoding="utf-8"))
+          print(payload.get("build_sha") or "")
+          print(payload.get("app_version") or "")
+          print((payload.get("operational_trust") or {}).get("market_stale_after_minutes") or "")
+          PY
+              )
+              if [ "${LIVE_VALUES[0]}" = "$GITHUB_SHA" ] \
+                && [ "${LIVE_VALUES[1]}" = "5.4.0" ] \
+                && [ "${LIVE_VALUES[2]}" = "15" ]; then
                 verified=1
                 break
               fi
@@ -143,11 +162,13 @@ jobs:
               "commit_sha": os.environ["GITHUB_SHA"],
               "page_url": os.environ["DEPLOYED_URL"],
               "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+              "app_version": live.get("app_version"),
               "generated_at_seoul": live.get("generated_at_seoul"),
               "kospi": market.get("kospi"),
               "kospi200_futures": market.get("kospi200_futures"),
               "stock_attention_availability": (market.get("stock_attention") or {}).get("availability"),
               "model_snapshot_reused": True,
+              "operational_trust": live.get("operational_trust"),
           }
           Path("deployments/fast-market-latest.json").write_text(
               json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
