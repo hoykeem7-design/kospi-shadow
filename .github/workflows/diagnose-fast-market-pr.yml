@@ -9,21 +9,12 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: kospi-shadow-pr-fast-pages
-  cancel-in-progress: true
 
 jobs:
   diagnose-fast-market:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 8
     env:
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
@@ -70,36 +61,18 @@ jobs:
           print("WARNINGS=" + json.dumps((dashboard.get("data_quality") or {}).get("warnings"), ensure_ascii=False))
           if not market.get("kospi") and not market.get("kospi200_futures"):
               raise SystemExit("KIS market snapshot is empty")
+          if dashboard.get("build_sha") != "${{ github.event.pull_request.head.sha }}":
+              raise SystemExit("dashboard build SHA mismatch")
           PY
           touch site/.nojekyll
+          node --check site/app.js
+          node --check site/sw.js
 
-      - uses: actions/upload-pages-artifact@v4
+      - name: Upload trusted fast-market site artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: fast-market-site
           path: site/
-
-      - name: Deploy diagnostic KIS snapshot to Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-      - name: Verify public Pages snapshot
-        shell: bash
-        env:
-          DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          verified=0
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error \
-                -H "Cache-Control: no-cache" \
-                "${DEPLOYED_URL}data/dashboard.json?sha=$EXPECTED_SHA&attempt=$attempt" \
-                -o /tmp/live-dashboard.json; then
-              LIVE_SHA=$(python -c 'import json; print(json.load(open("/tmp/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
-              if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
-                verified=1
-                break
-              fi
-            fi
-            sleep 5
-          done
-          test "$verified" -eq 1
+          if-no-files-found: error
+          retention-days: 2
+          overwrite: true
