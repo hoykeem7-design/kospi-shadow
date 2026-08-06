@@ -99,6 +99,9 @@ jobs:
           PY
 
           node --check site/app.js
+          if [ -f site/operational-trust.js ]; then
+            node --check site/operational-trust.js
+          fi
           node --check site/sw.js
           grep -q "v5.3.1" site/index.html
           (cd site && zip -qr ../outputs/site.zip .)
@@ -118,7 +121,9 @@ jobs:
             --data-binary @outputs/site.zip \
             "https://api.netlify.com/api/v1/sites/$SITE_ID/builds?clear_cache=true" || true)
           echo "BUILD_API_HTTP=$http_code"
-          test -f outputs/build-response.json && cat outputs/build-response.json || true
+          if [ -f outputs/build-response.json ]; then
+            cat outputs/build-response.json
+          fi
           test "$http_code" = "200"
           python - <<'PY'
           import json
@@ -153,7 +158,7 @@ jobs:
               print("pending")
           PY
             )
-            echo "Build status: $result"
+            echo "Build status attempt $attempt: $result"
             if [ "$result" = "done" ]; then
               completed=1
               break
