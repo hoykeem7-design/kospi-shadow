@@ -1,0 +1,70 @@
+name: Diagnose Fast KIS Market Refresh
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "diagnostics/fast-market-trigger.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-fast-market:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
+      PAGE_URL: https://hoykeem7-design.github.io/kospi-shadow/
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Verify KIS credentials
+        shell: bash
+        run: |
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 23; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 24; }
+
+      - run: pip install .
+
+      - name: Build fast KIS market snapshot
+        shell: bash
+        run: python scripts/fast_live_market.py
+
+      - name: Validate generated KIS data
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          market = dashboard.get("market") or {}
+          print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
+          print("KOSPI=" + json.dumps(market.get("kospi"), ensure_ascii=False))
+          print("FUTURES=" + json.dumps(market.get("kospi200_futures"), ensure_ascii=False))
+          print("WARNINGS=" + json.dumps((dashboard.get("data_quality") or {}).get("warnings"), ensure_ascii=False))
+          if not market.get("kospi") and not market.get("kospi200_futures"):
+              raise SystemExit("KIS market snapshot is empty")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fast-market-diagnostic-${{ github.run_number }}
+          path: site/data/dashboard.json
+          if-no-files-found: error
+          retention-days: 7
