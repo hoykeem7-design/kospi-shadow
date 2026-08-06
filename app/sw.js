@@ -21,10 +21,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then(async (keys) => {
-      const replacedAppShell = keys.some((key) => key.startsWith("kospi-shadow-decision-coach-") && key !== STATIC_CACHE);
       await Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key)));
       await self.clients.claim();
-      if (!replacedAppShell) return;
       const windows = await self.clients.matchAll({ type: "window" });
       await Promise.all(windows.map((client) => client.navigate ? client.navigate(client.url) : null));
     })
