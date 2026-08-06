@@ -42,7 +42,7 @@ permissions:
 
 concurrency:
   group: kospi-shadow-live-data
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-data:
@@ -148,9 +148,13 @@ jobs:
         run: |
           test -f site/index.html
           test -f site/app.js
+          test -f site/operational-trust.js
+          test -f site/runtime-state-fix.js
           test -f site/sw.js
           test -f site/data/dashboard.json
           node --check site/app.js
+          node --check site/operational-trust.js
+          node --check site/runtime-state-fix.js
           node --check site/sw.js
           touch site/.nojekyll
           python - <<'PY'
@@ -162,7 +166,7 @@ jobs:
           expected_sha = os.environ["GITHUB_SHA"]
           if dashboard.get("build_sha") != expected_sha:
               raise SystemExit(f"dashboard build_sha mismatch: expected {expected_sha}, got {dashboard.get('build_sha')}")
-          if dashboard.get("app_version") != "5.3.1":
+          if dashboard.get("app_version") != "5.4.0":
               raise SystemExit(f"unexpected app_version: {dashboard.get('app_version')}")
           generated_at = dashboard.get("generated_at_seoul")
           if not generated_at:
