@@ -1,10 +1,11 @@
 {
   "status": "success",
   "mode": "fast_live_market_only",
-  "commit_sha": "8bb24b3fb3ee64f24fc3c74fbb485c2e4aaa0d5a",
+  "commit_sha": "973f65874c671ad79ec8a6d0163736fcc2d546d0",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-08-06T09:46:05.040604+00:00",
-  "generated_at_seoul": "2026-08-06T18:30:28.714627+09:00",
+  "recorded_at_utc": "2026-08-06T20:06:50.971011+00:00",
+  "app_version": "5.4.0",
+  "generated_at_seoul": "2026-08-07T05:06:28.177489+09:00",
   "kospi": {
     "name": "KOSPI",
     "price": 6296.38,
@@ -18,7 +19,7 @@
     "decliners": 381.0,
     "source": "KIS",
     "observed_at": null,
-    "received_at": "2026-08-06T18:30:29.163191+09:00",
+    "received_at": "2026-08-07T05:06:29.244525+09:00",
     "data_delay_seconds": null,
     "stale": null,
     "data_quality": "unknown_time"
@@ -35,11 +36,29 @@
     "volume": 123714.0,
     "source": "KIS",
     "observed_at": null,
-    "received_at": "2026-08-06T18:30:29.603980+09:00",
+    "received_at": "2026-08-07T05:06:29.711660+09:00",
     "data_delay_seconds": null,
     "stale": null,
     "data_quality": "unknown_time"
   },
-  "stock_attention_availability": "available",
-  "model_snapshot_reused": true
+  "stock_attention_availability": "unavailable",
+  "model_snapshot_reused": true,
+  "operational_trust": {
+    "schema_version": 1,
+    "official_app_url": "https://hoykeem7-design.github.io/kospi-shadow/",
+    "official_host": "hoykeem7-design.github.io",
+    "official_path": "/kospi-shadow/",
+    "market_stale_after_minutes": 15,
+    "model_stale_after_days": 8,
+    "market_timestamp_fields": [
+      "market.kospi.received_at",
+      "market.kospi200_futures.received_at"
+    ],
+    "model_timestamp_field": "market_refresh.model_snapshot_source_generated_at_seoul",
+    "news_timestamp_fields": [
+      "news.received_at",
+      "news.published_at_kst"
+    ],
+    "trade_lock_policy": "장중 현물·선물 중 하나라도 미수신이거나 15분 초과 지연이면 DATA_STALE로 신규 매매 판단을 잠급니다."
+  }
 }
