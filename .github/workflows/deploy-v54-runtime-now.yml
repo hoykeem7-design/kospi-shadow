@@ -8,18 +8,63 @@ on:
     paths:
       - "app/deploy-v54-now.trigger"
       - ".github/workflows/deploy-v54-runtime-now.yml"
+  schedule:
+    # Temporary recovery window: 03:00-06:55 KST on August 7 (UTC August 6).
+    - cron: "*/5 18-21 6 8 *"
 
 permissions:
   contents: write
   pages: write
   id-token: write
 
+# Share the full live-data group so this recovery run cancels the stale queued
+# KOSPI Shadow Live Data runs before deploying the corrected v5.4 shell.
 concurrency:
-  group: pages
+  group: kospi-shadow-live-data
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      needed: ${{ steps.status.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Check whether runtime fix is already verified
+        id: status
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("deployments/runtime-fix-latest.json")
+          verified = False
+          if path.exists():
+              try:
+                  payload = json.loads(path.read_text(encoding="utf-8"))
+                  verified = (
+                      payload.get("status") == "success"
+                      and payload.get("app_version") == "5.4.0"
+                      and payload.get("runtime_state") == "premarket_prep_enabled"
+                      and payload.get("service_worker_cache")
+                      == "kospi-shadow-decision-coach-v5-4-0-r2-static"
+                  )
+              except (OSError, ValueError):
+                  verified = False
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"needed={'false' if verified else 'true'}\n")
+          print(f"runtime_fix_already_verified={verified}")
+          PY
+
   build:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -90,7 +135,10 @@ jobs:
           path: site/
 
   deploy:
-    needs: build
+    needs:
+      - check
+      - build
+    if: needs.check.outputs.needed == 'true' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
