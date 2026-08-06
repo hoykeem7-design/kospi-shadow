@@ -1,4 +1,4 @@
-name: KOSPI Shadow Coach App
+name: KOSPI Shadow Live Data
 
 on:
   workflow_dispatch:
@@ -45,7 +45,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  build-data:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -53,8 +53,6 @@ jobs:
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       DART_API_KEY: ${{ secrets.DART_API_KEY }}
       PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
       PREMARKET_HISTORY_DIR: premarket-history-store/history
@@ -63,22 +61,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Check out durable history workspace
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           path: premarket-history-store
           fetch-depth: 0
+
       - name: Prepare durable history branch
         shell: bash
         run: bash scripts/prepare_premarket_history.sh premarket-history-store history
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
       - name: Restore market data
         uses: actions/cache@v4
         with:
@@ -86,6 +89,7 @@ jobs:
           key: market-data-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             market-data-${{ runner.os }}-
+
       - name: Restore trained state
         uses: actions/cache@v4
         with:
@@ -93,6 +97,7 @@ jobs:
           key: model-state-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             model-state-${{ runner.os }}-
+
       - name: Restore coach history
         uses: actions/cache@v4
         with:
@@ -100,16 +105,17 @@ jobs:
           key: coach-history-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             coach-history-${{ runner.os }}-
-      - name: Verify data and deployment secrets
+
+      - name: Verify market-data secrets
         shell: bash
         run: |
           test -n "$KRX_AUTH_KEY" || { echo "KRX_AUTH_KEY is missing"; exit 2; }
           test -n "$FRED_API_KEY" || { echo "FRED_API_KEY is missing"; exit 2; }
           test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
           test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
-          test -n "$NETLIFY_AUTH_TOKEN" || { echo "NETLIFY_AUTH_TOKEN is missing"; exit 2; }
-          test -n "$NETLIFY_SITE_ID" || { echo "NETLIFY_SITE_ID is missing"; exit 2; }
+
       - run: pip install .
+
       - name: Refresh prediction and build session-aware PWA
         id: coach-build
         shell: bash
@@ -119,12 +125,13 @@ jobs:
           refresh_status=$?
           set -e
           if [ "$refresh_status" -ne 0 ]; then
-            echo "::warning::Prediction refresh failed with exit code $refresh_status. Building and deploying the latest available fail-closed snapshot instead."
+            echo "::warning::Prediction refresh failed with exit code $refresh_status. Building the latest available fail-closed snapshot instead."
             kospi-shadow-coach --config config/default.yml --project-root .
             echo "refresh_mode=fallback" >> "$GITHUB_OUTPUT"
           else
             echo "refresh_mode=refreshed" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Persist normalized and raw premarket history
         shell: bash
         run: |
@@ -135,16 +142,17 @@ jobs:
             git -C premarket-history-store commit -m "Store premarket history for run $GITHUB_RUN_ID"
             git -C premarket-history-store push origin HEAD:premarket-history
           fi
-      - name: Validate deploy directory
+
+      - name: Validate fresh Pages package
         shell: bash
         run: |
           test -f site/index.html
           test -f site/app.js
           test -f site/sw.js
           test -f site/data/dashboard.json
-          test -f site/_headers
           node --check site/app.js
           node --check site/sw.js
+          touch site/.nojekyll
           python - <<'PY'
           import json
           import os
@@ -152,115 +160,117 @@ jobs:
 
           dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
           expected_sha = os.environ["GITHUB_SHA"]
-          actual_sha = dashboard.get("build_sha")
-          if actual_sha != expected_sha:
-              raise SystemExit(f"dashboard build_sha mismatch before deploy: expected {expected_sha}, got {actual_sha}")
+          if dashboard.get("build_sha") != expected_sha:
+              raise SystemExit(f"dashboard build_sha mismatch: expected {expected_sha}, got {dashboard.get('build_sha')}")
           if dashboard.get("app_version") != "5.3.1":
               raise SystemExit(f"unexpected app_version: {dashboard.get('app_version')}")
+          generated_at = dashboard.get("generated_at_seoul")
+          if not generated_at:
+              raise SystemExit("dashboard generated_at_seoul is missing")
+          print(f"Generated market snapshot: {generated_at}")
           PY
-      - name: Publish summary
+
+      - name: Publish run summary
         shell: bash
         run: |
           {
             if [ -f outputs/daily_brief.md ]; then
               cat outputs/daily_brief.md
             else
-              echo "Prediction refresh output was unavailable; deployed a fail-closed app snapshot."
+              echo "Prediction output was unavailable; generated a fail-closed snapshot."
             fi
             echo ""
             echo "Coach build mode: ${{ steps.coach-build.outputs.refresh_mode }}"
-            echo "Coach PWA generated and queued for Netlify production deployment."
+            echo "Fresh package will be deployed directly to GitHub Pages."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload installable app artifact
+
+      - name: Upload diagnostic app artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kospi-shadow-coach-${{ github.run_number }}
+          name: kospi-shadow-live-data-${{ github.run_number }}
           path: site/
           if-no-files-found: error
-          retention-days: 30
-      - name: Deploy latest dashboard to Netlify production
-        shell: bash
-        run: |
-          npx --yes netlify-cli@26.2.0 deploy \
-            --prod \
-            --no-build \
-            --dir=site \
-            --site="$NETLIFY_SITE_ID" \
-            --auth="$NETLIFY_AUTH_TOKEN" \
-            --message="KOSPI Coach run $GITHUB_RUN_NUMBER ($GITHUB_SHA)" \
-            --timeout=10m \
-            --json | tee outputs/netlify-deploy.json
-      - name: Verify deployed Netlify files
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
+          retention-days: 14
 
-          payload = json.loads(Path("outputs/netlify-deploy.json").read_text(encoding="utf-8"))
-          url = payload.get("deploy_url") or payload.get("ssl_url") or payload.get("url")
-          if not url:
-              raise SystemExit(f"Netlify deploy response has no deploy URL: {payload}")
-          Path("outputs/netlify-deploy-url.txt").write_text(url.rstrip("/"), encoding="utf-8")
-          PY
-          deploy_url="$(cat outputs/netlify-deploy-url.txt)"
-          verified=0
-          for attempt in $(seq 1 12); do
-            if curl --fail --silent --show-error \
-                -H "Cache-Control: no-cache" \
-                "$deploy_url/index.html?sha=$GITHUB_SHA&attempt=$attempt" \
-                -o outputs/deployed-index.html \
-              && curl --fail --silent --show-error \
-                -H "Cache-Control: no-cache" \
-                "$deploy_url/data/dashboard.json?sha=$GITHUB_SHA&attempt=$attempt" \
-                -o outputs/deployed-dashboard.json; then
-              verified=1
-              break
-            fi
-            sleep 5
-          done
-          test "$verified" -eq 1
-          grep -q "v5.3.1" outputs/deployed-index.html
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          dashboard = json.loads(Path("outputs/deployed-dashboard.json").read_text(encoding="utf-8"))
-          expected_sha = os.environ["GITHUB_SHA"]
-          actual_sha = dashboard.get("build_sha")
-          if actual_sha != expected_sha:
-              raise SystemExit(f"deployed dashboard is stale: expected {expected_sha}, got {actual_sha}")
-          if dashboard.get("app_version") != "5.3.1":
-              raise SystemExit(f"deployed app version mismatch: {dashboard.get('app_version')}")
-          PY
-      - name: Record Netlify deployment
-        if: always()
-        shell: bash
-        run: |
-          if [ -s outputs/netlify-deploy.json ]; then
-            {
-              echo ""
-              echo "## Netlify deployment"
-              echo '```json'
-              cat outputs/netlify-deploy.json
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Upload Pages artifact
-        if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site/
 
   deploy-pages:
-    if: ${{ vars.ENABLE_GITHUB_PAGES == 'true' }}
-    needs: build-and-deploy
+    needs: build-data
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy app to GitHub Pages
+      - name: Deploy fresh market data to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify live market snapshot
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          verified=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+                -H "Cache-Control: no-cache" \
+                "${PAGE_URL}data/dashboard.json?sha=$EXPECTED_SHA&attempt=$attempt" \
+                -o outputs/live-dashboard.json; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
+              if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
+                verified=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$verified" -eq 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Record verified live-data deployment
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          live = json.loads(Path("outputs/live-dashboard.json").read_text(encoding="utf-8"))
+          status = {
+              "status": "success",
+              "commit_sha": os.environ["DEPLOYED_SHA"],
+              "page_url": os.environ["PAGE_URL"],
+              "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+              "app_version": live.get("app_version"),
+              "generated_at_seoul": live.get("generated_at_seoul"),
+              "data_quality": live.get("data_quality"),
+          }
+          Path("deployments/market-data-latest.json").write_text(
+              json.dumps(status, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployments/market-data-latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Record live market data deployment $DEPLOYED_SHA"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
