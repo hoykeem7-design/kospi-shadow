@@ -10,11 +10,15 @@ from kospi_shadow.coach import generate_coach_app
 from kospi_shadow.config import load_settings
 
 
+def _deployment_sha() -> str | None:
+    return (os.getenv("SOURCE_SHA") or os.getenv("GITHUB_SHA") or "").strip() or None
+
+
 def _load_base_dashboard(page_url: str) -> dict:
     url = page_url.rstrip("/") + "/data/dashboard.json"
     response = requests.get(
         url,
-        params={"seed": os.getenv("GITHUB_SHA", "local")},
+        params={"seed": _deployment_sha() or "local"},
         headers={"Cache-Control": "no-cache", "User-Agent": "KOSPI-Shadow-Fast-Live/1.0"},
         timeout=25,
     )
@@ -74,10 +78,15 @@ def _rewrite_dashboard(project_root: Path, dashboard: dict, base_generated_at: s
         warnings = (dashboard.get("data_quality") or {}).get("warnings") or []
         raise RuntimeError("KIS live snapshot unavailable: " + " | ".join(map(str, warnings)))
 
+    source_sha = _deployment_sha()
+    if source_sha:
+        dashboard["build_sha"] = source_sha
+
     dashboard["market_refresh"] = {
         "mode": "fast_live_market_only",
         "model_snapshot_reused": True,
         "model_snapshot_source_generated_at_seoul": base_generated_at,
+        "source_sha": source_sha,
         "note": "현물·선물·거래순위는 현재 KIS 데이터이며 모델 확률은 마지막 검증 스냅샷을 재사용합니다.",
     }
     quality = dashboard.setdefault("data_quality", {})
