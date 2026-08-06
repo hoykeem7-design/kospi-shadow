@@ -1,0 +1,84 @@
+name: Diagnose KOSPI Market Data
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "diagnostics/market-data-trigger.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-market-data:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Report secret availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KRX_AUTH_KEY FRED_API_KEY KIS_APP_KEY KIS_APP_SECRET; do
+            if [ -n "${!name:-}" ]; then
+              echo "$name=present"
+            else
+              echo "$name=missing"
+            fi
+          done
+          test -n "$KRX_AUTH_KEY" || exit 21
+          test -n "$FRED_API_KEY" || exit 22
+          test -n "$KIS_APP_KEY" || exit 23
+          test -n "$KIS_APP_SECRET" || exit 24
+
+      - run: pip install .
+
+      - name: Refresh current market data
+        shell: bash
+        run: |
+          set -euo pipefail
+          kospi-shadow-coach --refresh-prediction --config config/default.yml --project-root .
+
+      - name: Validate generated dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f site/data/dashboard.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
+          print("APP_VERSION=" + str(dashboard.get("app_version")))
+          print("GENERATED_AT_SEOUL=" + str(dashboard.get("generated_at_seoul")))
+          print("DATA_QUALITY=" + json.dumps(dashboard.get("data_quality"), ensure_ascii=False))
+          if not dashboard.get("generated_at_seoul"):
+              raise SystemExit("generated_at_seoul missing")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-data-diagnostic-${{ github.run_number }}
+          path: |
+            site/data/dashboard.json
+            outputs/
+          if-no-files-found: error
+          retention-days: 7
