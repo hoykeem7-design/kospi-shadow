@@ -1,6 +1,6 @@
 purpose=v5.4_runtime_and_market_force_deploy
 requested_at_kst=2026-08-07T03:36:00+09:00
-synchronized_at_kst=2026-08-07T03:51:00+09:00
+synchronized_at_kst=2026-08-07T03:52:00+09:00
 expected_app_version=5.4.0
 expected_runtime_state=premarket_prep_enabled
-attempt=3
+attempt=4
