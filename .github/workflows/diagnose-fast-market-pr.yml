@@ -22,6 +22,7 @@ jobs:
       DART_API_KEY: ${{ secrets.DART_API_KEY }}
       PREMARKET_SYMBOLS: ${{ vars.PREMARKET_SYMBOLS }}
       PAGE_URL: https://hoykeem7-design.github.io/kospi-shadow/
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +52,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
@@ -61,7 +63,7 @@ jobs:
           print("WARNINGS=" + json.dumps((dashboard.get("data_quality") or {}).get("warnings"), ensure_ascii=False))
           if not market.get("kospi") and not market.get("kospi200_futures"):
               raise SystemExit("KIS market snapshot is empty")
-          if dashboard.get("build_sha") != "${{ github.event.pull_request.head.sha }}":
+          if dashboard.get("build_sha") != os.environ["SOURCE_SHA"]:
               raise SystemExit("dashboard build SHA mismatch")
           PY
           touch site/.nojekyll
