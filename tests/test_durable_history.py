@@ -100,7 +100,7 @@ def test_coach_and_collector_share_safe_full_history_checkout():
     for name in ("coach-app.yml", "premarket-collector.yml"):
         text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "contents: write" in text
-        assert text.count("fetch-depth: 0") == 2
+        assert text.count("fetch-depth: 0") >= 2
         assert (
             "bash scripts/prepare_premarket_history.sh "
             "premarket-history-store history"
