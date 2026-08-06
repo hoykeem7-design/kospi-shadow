@@ -7,14 +7,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_coach_workflow_has_netlify_production_deploy():
+def test_coach_workflow_has_github_pages_production_deploy():
     path = ROOT / ".github" / "workflows" / "coach-app.yml"
     text = path.read_text(encoding="utf-8")
-    assert "NETLIFY_AUTH_TOKEN" in text
-    assert "NETLIFY_SITE_ID" in text
-    assert "netlify-cli@latest deploy" in text
-    assert "--prod" in text
-    assert "--dir=site" in text
+    assert "pages: write" in text
+    assert "id-token: write" in text
+    assert "actions/upload-pages-artifact@v4" in text
+    assert "actions/deploy-pages@v4" in text
+    assert "Deploy fresh market data to GitHub Pages" in text
     yaml.safe_load(text)
 
 
@@ -58,7 +58,6 @@ def test_netlify_headers_disable_browser_cache_for_live_data():
     assert "/sw.js" in text
 
 
-
 def test_app_renders_probability_explanation_panel():
     html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
     javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
@@ -83,16 +82,31 @@ def test_v53_app_shell_is_decision_first_and_research_is_collapsed():
     assert 'class="decision-dock"' in html
 
 
-def test_v53_refresh_reloads_the_app_shell_and_rotates_static_cache():
+def test_v54_refresh_rotates_cache_and_loads_operational_trust_guard():
     javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
     worker = (ROOT / "app" / "sw.js").read_text(encoding="utf-8")
+    trust = (ROOT / "app" / "operational-trust.js").read_text(encoding="utf-8")
     assert 'const APP_SHELL_VERSION = "5.3.1"' in javascript
     assert "reloadAppShell" in javascript
     assert "window.location.reload()" in javascript
     assert 'registration.update()' in javascript
-    assert 'kospi-shadow-decision-coach-v5-3-1-static' in worker
+    assert 'kospi-shadow-decision-coach-v5-4-0-r1-static' in worker
+    assert 'operational-trust.js' in worker
+    assert 'appWithOperationalTrust' in worker
     assert 'client.navigate(client.url)' in worker
     assert 'SKIP_WAITING' in worker
+    assert 'const VERSION = "5.4.0"' in trust
+    assert 'MARKET_STALE_AFTER_MINUTES = 15' in trust
+    assert 'DATA_STALE · 판단 잠금' in trust
+    assert 'hoykeem7-design.github.io' in trust
+
+
+def test_fast_market_snapshot_publishes_operational_trust_metadata():
+    source = (ROOT / "scripts" / "fast_live_market.py").read_text(encoding="utf-8")
+    assert 'APP_VERSION = "5.4.0"' in source
+    assert '"operational_trust"' in source
+    assert '"market_stale_after_minutes"' in source
+    assert '"trade_lock_policy"' in source
 
 
 def test_candidate_ui_is_explicitly_subordinate_to_market_gate():
