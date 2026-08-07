@@ -1,0 +1,139 @@
+name: KOSPI Shadow Weekly Full Retrain
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/weekly-retrain.yml"
+  schedule:
+    - cron: "50 16 * * 5"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Verify required market-data credentials
+        shell: bash
+        run: |
+          test -n "$KRX_AUTH_KEY" || { echo "KRX_AUTH_KEY is missing"; exit 2; }
+          test -n "$FRED_API_KEY" || { echo "FRED_API_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_KEY" || { echo "KIS_APP_KEY is missing"; exit 2; }
+          test -n "$KIS_APP_SECRET" || { echo "KIS_APP_SECRET is missing"; exit 2; }
+
+      - name: Install package
+        run: pip install .
+
+      - name: Run leakage-controlled full retraining
+        run: kospi-shadow --mode full --config config/default.yml --project-root . | tee weekly-retrain-result.json
+
+      - name: Package versioned outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="kospi_shadow_v$(date -u +%Y%m%d)"
+          ROOT="model_runs/$VERSION"
+          mkdir -p "$ROOT/raw" "$ROOT/processed" "$ROOT/models" "$ROOT/reports"
+
+          cp outputs/data_manifest.json "$ROOT/raw/source_manifest.json"
+          cp outputs/challenger_model.joblib "$ROOT/models/challenger_model.joblib"
+          cp outputs/model_card.md "$ROOT/reports/model_card.md"
+          cp outputs/metrics.json "$ROOT/reports/metrics.json"
+          cp outputs/oos_predictions.csv "$ROOT/reports/oos_predictions.csv"
+          cp outputs/feature_columns.json "$ROOT/processed/feature_columns.json"
+          cp outputs/feature_tail.csv "$ROOT/processed/model_dataset_tail400.csv"
+          cp outputs/latest_prediction.json "$ROOT/reports/latest_prediction.json"
+          cp weekly-retrain-result.json "$ROOT/reports/run_result.json"
+          cp requirements.txt "$ROOT/requirements.txt" 2>/dev/null || true
+
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ.get('GITHUB_WORKSPACE', '.'))
+          version = 'kospi_shadow_v' + __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y%m%d')
+          out = root / 'model_runs' / version
+          manifest_path = out / 'raw' / 'source_manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          files = {}
+          for p in sorted(out.rglob('*')):
+              if p.is_file():
+                  files[str(p.relative_to(out))] = {
+                      'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+                      'bytes': p.stat().st_size,
+                  }
+          manifest['artifact_files'] = files
+          manifest['weekly_full_retrain'] = True
+          manifest['model_dataset_note'] = 'Pipeline currently persists the latest 400 feature rows only; full feature table is not exported by current code.'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+
+          (cd model_runs && zip -qr "$VERSION.zip" "$VERSION")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Fail closed if promotion gate is not passed
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          version = os.environ['VERSION']
+          metrics = json.loads(Path(f'model_runs/{version}/reports/metrics.json').read_text(encoding='utf-8'))
+          gate = metrics['promotion']
+          print(json.dumps({
+              'status': gate['status'],
+              'signal_enabled': gate['signal_enabled'],
+              'checks': gate['checks'],
+              'brier': metrics['classification']['brier'],
+              'baseline_brier': metrics['classification']['baseline_brier'],
+              'oos_n': metrics['classification']['n'],
+              'target_date_max': metrics['data_manifest']['target_date_max'],
+          }, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Commit reproducible text outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "model_runs/$VERSION/raw/source_manifest.json" \
+                  "model_runs/$VERSION/processed" \
+                  "model_runs/$VERSION/reports"
+          if ! git diff --cached --quiet; then
+            git commit -m "Record weekly full retrain $VERSION"
+            git push origin HEAD:main
+          fi
+
+      - name: Upload complete retraining artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.VERSION }}
+          path: |
+            model_runs/${{ env.VERSION }}/
+            model_runs/${{ env.VERSION }}.zip
+          retention-days: 30
+          if-no-files-found: error
