@@ -80,7 +80,7 @@ decision_coach:
   paper_slippage_bps_per_side: 5.0
   maximum_decision_records_per_symbol: 5000
   intraday_review_times: ["09:30", "10:30", "12:00", "14:30", "15:20"]
-  coach_deploy_times: ["07:30", "08:00", "08:50", "09:05", "12:00", "15:20", "15:35", "15:45", "18:00", "20:05"]
+  coach_deploy_times: ["07:30", "20:05"]
   collector_times: ["08:12", "08:22", "08:32", "08:42", "08:50", "08:55", "09:00", "09:05", "09:30", "15:42", "17:00", "19:00", "20:00"]
   kospi_market_gate:
     trade_ok_probability: 0.57

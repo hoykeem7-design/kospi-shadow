@@ -1,11 +1,7 @@
-name: Deploy KOSPI App via PR Resolved Site
+name: Legacy Netlify Resolved Deploy (manual only)
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "app/**"
+  workflow_dispatch:
 
 permissions:
   contents: read

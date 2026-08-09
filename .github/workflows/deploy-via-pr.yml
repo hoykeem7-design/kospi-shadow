@@ -1,12 +1,7 @@
-name: Deploy KOSPI App via PR
+name: Legacy Netlify Deploy via PR (manual only)
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - ".github/workflows/deploy-via-pr.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read

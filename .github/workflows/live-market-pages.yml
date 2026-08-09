@@ -17,6 +17,10 @@ on:
     - cron: "*/10 0-6 * * 1-5"
     # 16:00-20:40 KST, Monday-Friday
     - cron: "*/20 7-11 * * 1-5"
+    # Market Gate checkpoints outside the 10/20-minute cadence.
+    - cron: "5 0 * * 1-5"
+    - cron: "45 6 * * 1-5"
+    - cron: "5 11 * * 1-5"
 
 permissions:
   contents: write
@@ -29,6 +33,10 @@ concurrency:
 
 jobs:
   refresh-and-deploy:
+    # Pages deployment must not race the full Coach deployment.
+    concurrency:
+      group: kospi-shadow-pages-publish
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -69,10 +77,12 @@ jobs:
           test -f site/index.html
           test -f site/app.js
           test -f site/operational-trust.js
+          test -f site/runtime-state-fix.js
           test -f site/sw.js
           test -f site/data/dashboard.json
           node --check site/app.js
           node --check site/operational-trust.js
+          node --check site/runtime-state-fix.js
           node --check site/sw.js
           touch site/.nojekyll
           python - <<'PY'
@@ -83,11 +93,11 @@ jobs:
           dashboard = json.loads(Path("site/data/dashboard.json").read_text(encoding="utf-8"))
           if dashboard.get("build_sha") != os.environ["GITHUB_SHA"]:
               raise SystemExit("dashboard build SHA mismatch")
-          if dashboard.get("app_version") != "5.4.0":
+          if dashboard.get("app_version") != "5.5.0":
               raise SystemExit(f"unexpected app version: {dashboard.get('app_version')}")
           trust = dashboard.get("operational_trust") or {}
           if trust.get("market_stale_after_minutes") != 15:
-              raise SystemExit("v5.4 operational trust policy is missing")
+              raise SystemExit("v5.5 operational trust policy is missing")
           market = dashboard.get("market") or {}
           if not market.get("kospi") and not market.get("kospi200_futures"):
               raise SystemExit("KIS market snapshot is empty")
@@ -125,7 +135,7 @@ jobs:
           PY
               )
               if [ "${LIVE_VALUES[0]}" = "$GITHUB_SHA" ] \
-                && [ "${LIVE_VALUES[1]}" = "5.4.0" ] \
+                && [ "${LIVE_VALUES[1]}" = "5.5.0" ] \
                 && [ "${LIVE_VALUES[2]}" = "15" ]; then
                 verified=1
                 break

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "5.4.0";
+  const VERSION = "5.5.0";
   const OFFICIAL_HOST = "hoykeem7-design.github.io";
   const OFFICIAL_PATH = "/kospi-shadow/";
   const OFFICIAL_URL = `https://${OFFICIAL_HOST}${OFFICIAL_PATH}`;
@@ -267,13 +267,13 @@
 
     const marketTone = market.active ? (market.fresh ? "ok" : "danger") : (market.complete ? "ok" : "warn");
     const marketTitle = market.active
-      ? (market.fresh ? "장중 정상" : "장중 지연")
+      ? (market.fresh ? "장중 수신 정상" : "장중 수신 지연")
       : (market.complete ? "마감·비활성 스냅샷" : "일부 미수신");
     setTrustItem(
       "trustMarket",
       marketTone,
       marketTitle,
-      `${formatKst(market.newestInstant)} · ${formatAge(market.oldestAge)}${market.active ? ` · 허용 ${MARKET_STALE_AFTER_MINUTES}분` : ""}`
+      `KIS 수신 ${formatKst(market.newestInstant)} · ${formatAge(market.oldestAge)}${market.active ? ` · 허용 ${MARKET_STALE_AFTER_MINUTES}분` : ""}`
     );
 
     const modelExpired = modelAge == null || modelAge > MODEL_STALE_AFTER_MINUTES;

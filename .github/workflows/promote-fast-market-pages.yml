@@ -1,11 +1,7 @@
-name: Promote Fast KIS Market to Pages
+name: Legacy Fast Market Promotion (manual only)
 
 on:
-  workflow_run:
-    workflows:
-      - Diagnose Fast KIS Market Refresh
-    types:
-      - completed
+  workflow_dispatch:
 
 permissions:
   actions: read

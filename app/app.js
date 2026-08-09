@@ -5,10 +5,22 @@ const clsFor = (value) => value == null || Math.abs(value) < 1e-12 ? "neutral" :
 const safeText = (value, fallback="--") => value == null || value === "" ? fallback : String(value);
 const escapeHtml = (value) => safeText(value, "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
 const safeUrl = (value) => { try { const url = new URL(String(value)); return ["http:","https:"].includes(url.protocol) ? url.href : "#"; } catch { return "#"; } };
-// These are actual Coach workflow deployment times. The four Market Gate
-// checkpoints are published at 07:30, 08:00, 08:50 and 09:05 KST.
-const AUTO_UPDATE_TIMES = ["07:30","08:00","08:50","09:05","12:00","15:20","15:35","15:45","18:00","20:05"];
-const APP_SHELL_VERSION = "5.3.1";
+// GitHub Actions publishes static snapshots. These are target times, not a
+// promise of tick-level delivery; scheduled runs can start a few minutes late.
+const MODEL_REFRESH_CHECKPOINTS = [
+  ["07:30", "장전 모델·브리핑"],
+  ["20:05", "마감 모델·익일 준비"]
+];
+const MARKET_REFRESH_WINDOWS = [
+  [8 * 60, 8 * 60 + 50, 10, "NXT·시장 스냅샷"],
+  [9 * 60, 15 * 60 + 50, 10, "장중 시장 스냅샷"],
+  [16 * 60, 20 * 60 + 40, 20, "애프터마켓 스냅샷"]
+];
+const EXTRA_MARKET_REFRESHES = [
+  ["09:05", "시초 5분 확인"],
+  ["15:45", "마감 확인"]
+];
+const APP_SHELL_VERSION = "5.5.0";
 const CONFIRMATION_LABELS = {
   nxt_configured_symbols_positive: "NXT 관찰 종목의 방향 확인",
   kospi200_futures_nonnegative: "KOSPI200 선물의 비약세 확인",
@@ -62,22 +74,39 @@ function seoulDateToInstant(year, month, day, hour, minute) {
   return new Date(Date.UTC(year, month - 1, day, hour - 9, minute));
 }
 
+function refreshScheduleForBusinessDay() {
+  const schedule = new Map();
+  const add = (at, label, priority=0) => {
+    const prior = schedule.get(at);
+    if (!prior || priority >= prior.priority) schedule.set(at, {at, label, priority});
+  };
+  for (const [at, label] of MODEL_REFRESH_CHECKPOINTS) add(at, label, 2);
+  for (const [start, end, step, label] of MARKET_REFRESH_WINDOWS) {
+    for (let minute = start; minute <= end; minute += step) {
+      const at = `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+      add(at, label, 1);
+    }
+  }
+  for (const [at, label] of EXTRA_MARKET_REFRESHES) add(at, label, 1);
+  return [...schedule.values()].sort((left, right) => left.at.localeCompare(right.at));
+}
+
 function nextAutoUpdate(now=new Date()) {
   const p = seoulParts(now);
   for (let offset=0; offset<8; offset += 1) {
     const noon = seoulDateToInstant(p.year, p.month, p.day + offset, 12, 0);
     const d = seoulParts(noon);
     if (["Sat","Sun"].includes(d.weekday)) continue;
-    for (const at of AUTO_UPDATE_TIMES) {
+    for (const {at, label} of refreshScheduleForBusinessDay()) {
       const [hour, minute] = at.split(":").map(Number);
       const instant = seoulDateToInstant(d.year, d.month, d.day, hour, minute);
       if (instant.getTime() > now.getTime() + 30000) {
         const dayLabel = offset === 0 ? "오늘" : (offset === 1 ? "내일" : `${d.month}/${d.day}`);
-        return `${dayLabel} ${at} 예정`;
+        return `${dayLabel} ${at} ${label} 목표`;
       }
     }
   }
-  return "다음 영업일 07:30 예정";
+  return "다음 영업일 07:30 장전 모델·브리핑 목표";
 }
 
 function showToast(message, ok=false) {
@@ -534,12 +563,16 @@ function renderDecisionCoach(data) {
 
   const operations = coach?.operations || {};
   $("versionBadge").textContent = `v${safeText(operations.app_version, data?.app_version || APP_SHELL_VERSION)}`;
+  const publishedAt = operations.last_pages_deploy || data?.generated_at_seoul;
+  const collectedAt = operations.last_market_refresh || operations.last_data_collection || data?.generated_at_seoul;
   $("operationsMetrics").innerHTML = summaryRows([
     ["build SHA", safeText(operations.build_sha || data?.build_sha, "로컬/미제공")],
-    ["마지막 Netlify 배포", safeText(operations.last_netlify_deploy, "배포 메타데이터 미연결")],
-    ["마지막 데이터 수집", safeText(operations.last_data_collection, "수집 전")],
+    ["배포 채널", safeText(operations.publish_target, "GitHub Pages")],
+    ["현재 Pages 스냅샷 생성", safeText(publishedAt, "생성 시각 미제공")],
+    ["마지막 시장 수집", safeText(collectedAt, "수집 시각 미제공")],
     ["마지막 정상 워크플로", safeText(operations.last_successful_workflow, "상태 API 미연결")],
     ["다음 체크포인트", `${safeText(operations.next_scheduled_checkpoint?.at,"미정")} ${safeText(operations.next_scheduled_checkpoint?.label,"")}`],
+    ["자동 수집", "장중 10분 · 애프터마켓 20분 목표"],
     ["앱 갱신", "데이터 확인 + 앱 화면 버전 재검사"]
   ]);
 
@@ -548,12 +581,18 @@ function renderDecisionCoach(data) {
 }
 
 function renderFreshness(data) {
-  const generated = new Date(data.generated_at_seoul);
-  const ageMinutes = Math.max(0, Math.floor((Date.now() - generated.getTime()) / 60000));
-  const fresh = ageMinutes <= 90;
-  $("freshnessBadge").textContent = fresh ? `최신 · ${ageMinutes}분 전` : `주의 · ${ageMinutes}분 전 데이터`;
+  const received = [data?.market?.kospi, data?.market?.kospi200_futures]
+    .map(item => new Date(item?.received_at || item?.observed_at || ""))
+    .filter(value => !Number.isNaN(value.getTime()));
+  const generated = new Date(data?.generated_at_seoul || "");
+  const reference = received.length ? new Date(Math.min(...received.map(value => value.getTime()))) : generated;
+  const ageMinutes = Number.isNaN(reference.getTime()) ? null : Math.max(0, Math.floor((Date.now() - reference.getTime()) / 60000));
+  const threshold = Number(data?.operational_trust?.market_stale_after_minutes || 15);
+  const fresh = ageMinutes != null && ageMinutes <= threshold;
+  const label = received.length === 2 ? "시장 수신" : "스냅샷";
+  $("freshnessBadge").textContent = fresh ? `최신 ${label} · ${ageMinutes}분 전` : `주의 · ${label} ${ageMinutes == null ? "시각 미제공" : `${ageMinutes}분 전`}`;
   $("freshnessBadge").className = `badge ${fresh ? "fresh" : "stale"}`;
-  $("nextAutoUpdate").textContent = `다음 자동 업데이트 ${nextAutoUpdate()}`;
+  $("nextAutoUpdate").textContent = `다음 자동 갱신 ${nextAutoUpdate()}`;
 }
 
 function render(data) {

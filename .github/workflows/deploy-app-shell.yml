@@ -1,15 +1,7 @@
-name: Deploy KOSPI App Shell
+name: Legacy Netlify App Shell (manual only)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - ".github/workflows/deploy-app-shell.yml"
-  schedule:
-    - cron: "25,30,35 23 5 8 *"
 
 permissions:
   contents: read

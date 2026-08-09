@@ -10,7 +10,7 @@ from kospi_shadow.coach import generate_coach_app
 from kospi_shadow.config import load_settings
 
 
-APP_VERSION = "5.4.0"
+APP_VERSION = "5.5.0"
 OFFICIAL_APP_URL = "https://hoykeem7-design.github.io/kospi-shadow/"
 MARKET_STALE_AFTER_MINUTES = 15
 MODEL_STALE_AFTER_DAYS = 8
@@ -96,6 +96,15 @@ def _rewrite_dashboard(project_root: Path, dashboard: dict, base_generated_at: s
         "source_sha": source_sha,
         "note": "현물·선물·거래순위는 현재 KIS 데이터이며 모델 확률은 마지막 검증 스냅샷을 재사용합니다.",
     }
+    operations = (dashboard.get("decision_coach_v5") or {}).get("operations")
+    if isinstance(operations, dict):
+        operations.update({
+            "app_version": APP_VERSION,
+            "publish_target": "GitHub Pages",
+            "last_pages_deploy": dashboard.get("generated_at_seoul"),
+            "last_market_refresh": dashboard.get("generated_at_seoul"),
+            "refresh_mode": "scheduled_kis_snapshot",
+        })
     dashboard["operational_trust"] = {
         "schema_version": 1,
         "official_app_url": OFFICIAL_APP_URL,

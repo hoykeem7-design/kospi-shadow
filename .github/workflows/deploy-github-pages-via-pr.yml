@@ -1,13 +1,7 @@
-name: Deploy KOSPI App to GitHub Pages
+name: Legacy Pages Deploy (manual only)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - ".github/workflows/deploy-github-pages-via-pr.yml"
 
 permissions:
   contents: write

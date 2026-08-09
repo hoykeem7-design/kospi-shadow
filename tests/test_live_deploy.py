@@ -18,19 +18,39 @@ def test_coach_workflow_has_github_pages_production_deploy():
     yaml.safe_load(text)
 
 
-def test_coach_workflow_covers_post_close_refresh():
+def test_coach_workflow_separates_full_model_refresh_from_fast_market_refresh():
     text = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
-    assert 'cron: "35 15 * * 1-5"' in text
-    assert 'cron: "45 15 * * 1-5"' in text
-    assert 'cron: "0 18 * * 1-5"' in text
+    assert 'cron: "30 7 * * 1-5"' in text
     assert 'cron: "5 20 * * 1-5"' in text
     assert 'timezone: "Asia/Seoul"' in text
+    assert 'cron: "0 8 * * 1-5"' not in text
+    assert "cancel-in-progress: false" in text
 
 
-def test_coach_workflow_publishes_market_gate_checkpoints():
-    text = (ROOT / ".github" / "workflows" / "coach-app.yml").read_text(encoding="utf-8")
-    for cron in ('"30 7 * * 1-5"', '"0 8 * * 1-5"', '"50 8 * * 1-5"', '"5 9 * * 1-5"'):
+def test_fast_market_workflow_publishes_market_gate_checkpoints():
+    text = (ROOT / ".github" / "workflows" / "live-market-pages.yml").read_text(encoding="utf-8")
+    for cron in ('"*/10 23 * * 0-4"', '"*/10 0-6 * * 1-5"', '"5 0 * * 1-5"', '"45 6 * * 1-5"', '"5 11 * * 1-5"'):
         assert f"cron: {cron}" in text
+    assert "group: kospi-shadow-pages-publish" in text
+
+
+def test_legacy_deployers_are_not_automatic_production_paths():
+    legacy = [
+        "deploy-via-pr.yml",
+        "deploy-github-pages-via-pr.yml",
+        "deploy-via-pr-resolved.yml",
+        "deploy-v54-runtime-now.yml",
+        "deploy-app-shell.yml",
+        "deploy-via-pr-api-build.yml",
+        "promote-fast-market-pages.yml",
+    ]
+    for filename in legacy:
+        text = (ROOT / ".github" / "workflows" / filename).read_text(encoding="utf-8")
+        assert "workflow_dispatch:" in text
+        assert "  pull_request:" not in text
+        assert "  push:" not in text
+        assert "  schedule:" not in text
+        assert "  workflow_run:" not in text
 
 
 def test_aftermarket_collector_and_coach_use_shared_serialization():
@@ -68,9 +88,9 @@ def test_app_renders_probability_explanation_panel():
     assert "effect_probability_points" in javascript
 
 
-def test_v53_app_shell_is_decision_first_and_research_is_collapsed():
+def test_v55_app_shell_is_decision_first_and_research_is_collapsed():
     html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
-    assert "Decision Coach v5.3" in html
+    assert "Decision Coach v5.5" in html
     assert 'data-tab="today"' in html
     assert 'data-tab="candidates"' in html
     assert 'data-tab="research"' in html
@@ -82,28 +102,30 @@ def test_v53_app_shell_is_decision_first_and_research_is_collapsed():
     assert 'class="decision-dock"' in html
 
 
-def test_v54_refresh_rotates_cache_and_loads_operational_trust_guard():
+def test_v55_refresh_loads_operational_guards_without_worker_source_rewriting():
     javascript = (ROOT / "app" / "app.js").read_text(encoding="utf-8")
     worker = (ROOT / "app" / "sw.js").read_text(encoding="utf-8")
     trust = (ROOT / "app" / "operational-trust.js").read_text(encoding="utf-8")
-    assert 'const APP_SHELL_VERSION = "5.3.1"' in javascript
+    html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+    assert 'const APP_SHELL_VERSION = "5.5.0"' in javascript
     assert "reloadAppShell" in javascript
     assert "window.location.reload()" in javascript
     assert 'registration.update()' in javascript
-    assert 'kospi-shadow-decision-coach-v5-4-0-r1-static' in worker
+    assert 'kospi-shadow-decision-coach-v5-5-0-r1-static' in worker
     assert 'operational-trust.js' in worker
-    assert 'appWithOperationalTrust' in worker
+    assert 'appWithOperationalTrust' not in worker
     assert 'client.navigate(client.url)' in worker
     assert 'SKIP_WAITING' in worker
-    assert 'const VERSION = "5.4.0"' in trust
+    assert 'const VERSION = "5.5.0"' in trust
     assert 'MARKET_STALE_AFTER_MINUTES = 15' in trust
     assert 'DATA_STALE · 판단 잠금' in trust
     assert 'hoykeem7-design.github.io' in trust
+    assert html.index('src="app.js"') < html.index('src="operational-trust.js"') < html.index('src="runtime-state-fix.js"')
 
 
 def test_fast_market_snapshot_publishes_operational_trust_metadata():
     source = (ROOT / "scripts" / "fast_live_market.py").read_text(encoding="utf-8")
-    assert 'APP_VERSION = "5.4.0"' in source
+    assert 'APP_VERSION = "5.5.0"' in source
     assert '"operational_trust"' in source
     assert '"market_stale_after_minutes"' in source
     assert '"trade_lock_policy"' in source

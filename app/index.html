@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="KOSPI Market Gate와 실제 거래대금·거래량 순위, 테마·날씨 근거를 결합하는 투자 의사결정 코치 v5.3.1">
-  <title>KOSPI Shadow Decision Coach v5.3.1</title>
+  <meta name="description" content="KOSPI Market Gate와 최신 수집 거래대금·거래량 순위, 테마·날씨 근거를 결합하는 투자 의사결정 코치 v5.5.0">
+  <title>KOSPI Shadow Decision Coach v5.5.0</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
@@ -14,7 +14,7 @@
   <header class="topbar">
     <div class="brand-copy">
       <p class="eyebrow">KOSPI SHADOW</p>
-      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.3.1</span></div>
+      <div class="brand-line"><h1>Decision Coach</h1><span class="version-pill">v5.5.0</span></div>
     </div>
     <div class="header-actions">
       <button id="installButton" class="ghost hidden">앱 설치</button>
@@ -149,7 +149,7 @@
         </div>
         <section class="market-attention-panel" aria-labelledby="marketAttentionTitle">
           <div class="market-attention-head">
-            <div><p class="eyebrow">MARKET ATTENTION</p><h3 id="marketAttentionTitle">실시간 거래대금·거래량 관심 종목</h3></div>
+            <div><p class="eyebrow">MARKET ATTENTION</p><h3 id="marketAttentionTitle">최근 수집 거래대금·거래량 관심 종목</h3></div>
             <span id="marketAttentionStatus" class="badge">수신 확인 중</span>
           </div>
           <p id="marketAttentionNote" class="market-attention-note">포털 조회수가 아니라 KIS 시장 거래 순위입니다.</p>
@@ -264,8 +264,8 @@
       </details>
 
       <details id="operations" class="section-block card disclosure-card">
-        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.3.1</span></summary>
-        <div class="disclosure-body"><dl id="operationsMetrics" class="metric-list"></dl><p class="explanation-note">최신 데이터는 Netlify의 정적 dashboard.json을 확인합니다. 앱 다시 받기는 서비스워커와 화면 파일을 갱신한 뒤 페이지를 다시 엽니다.</p></div>
+        <summary><span>수집·배포 상태</span><span id="versionBadge" class="badge">v5.5.0</span></summary>
+        <div class="disclosure-body"><dl id="operationsMetrics" class="metric-list"></dl><p class="explanation-note">최신 데이터는 GitHub Pages의 정적 스냅샷을 확인합니다. 앱 다시 받기는 서비스워커와 화면 파일을 갱신한 뒤 페이지를 다시 엽니다.</p></div>
       </details>
 
       <div class="two-column research-health-grid">
@@ -286,5 +286,7 @@
   <div id="errorToast" class="toast hidden"></div>
   <script src="data/initial-data.js"></script>
   <script src="app.js" defer></script>
+  <script src="operational-trust.js" defer></script>
+  <script src="runtime-state-fix.js" defer></script>
 </body>
 </html>

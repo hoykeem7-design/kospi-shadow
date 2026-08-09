@@ -1,11 +1,7 @@
-name: Deploy KOSPI App via Netlify Build API
+name: Legacy Netlify API Deploy (manual only)
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "app/**"
+  workflow_dispatch:
 
 permissions:
   contents: read

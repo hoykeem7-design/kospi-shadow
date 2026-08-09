@@ -1,16 +1,7 @@
-name: Deploy v5.4 Runtime Fix Now
+name: Legacy v5.4 Runtime Recovery (manual only)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "app/deploy-v54-now.trigger"
-      - ".github/workflows/deploy-v54-runtime-now.yml"
-  schedule:
-    # Temporary recovery window: 03:00-06:55 KST on August 7 (UTC August 6).
-    - cron: "*/5 18-21 6 8 *"
 
 permissions:
   contents: write

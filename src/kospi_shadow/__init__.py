@@ -1,3 +1,3 @@
-"""KOSPI SHADOW v5.3.1: data-covered market gate and theme-supply radar."""
+"""KOSPI SHADOW v5.5.0: automated, fail-closed market decision coaching."""
 
-__version__ = "5.3.1"
+__version__ = "5.5.0"

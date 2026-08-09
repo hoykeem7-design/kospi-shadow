@@ -651,11 +651,12 @@ def test_workflows_serialize_history_and_pwa_advertises_actual_deploy_times():
     assert "group: kospi-shadow-live-data" in coach
     assert "premarket-history" in collector and "premarket-history" in coach
     assert "actions/cache" not in collector
-    update_line = next(line for line in app.splitlines() if line.startswith("const AUTO_UPDATE_TIMES"))
-    for market_gate_checkpoint in ('"07:30"', '"08:00"', '"08:50"', '"09:05"'):
-        assert market_gate_checkpoint in update_line
-    for collector_only in ('"08:55"', '"09:00"'):
-        assert collector_only not in update_line
+    assert "MODEL_REFRESH_CHECKPOINTS" in app
+    assert '"07:30"' in app
+    assert '"20:05"' in app
+    assert '"09:05"' in app
+    assert '"15:45"' in app
+    assert "MARKET_REFRESH_WINDOWS" in app
 
 
 def test_no_neutral_probability_fallback_remains_in_coach_or_app():

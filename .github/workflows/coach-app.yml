@@ -14,23 +14,9 @@ on:
       - "pyproject.toml"
       - ".github/workflows/coach-app.yml"
   schedule:
+    # Full model refreshes stay separate from fast KIS snapshots so NXT
+    # point-in-time collectors are not canceled by overlapping model builds.
     - cron: "30 7 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "0 8 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "50 8 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "5 9 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "0 12 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "20 15 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "35 15 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "45 15 * * 1-5"
-      timezone: "Asia/Seoul"
-    - cron: "0 18 * * 1-5"
       timezone: "Asia/Seoul"
     - cron: "5 20 * * 1-5"
       timezone: "Asia/Seoul"
@@ -42,7 +28,7 @@ permissions:
 
 concurrency:
   group: kospi-shadow-live-data
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-data:
@@ -166,7 +152,7 @@ jobs:
           expected_sha = os.environ["GITHUB_SHA"]
           if dashboard.get("build_sha") != expected_sha:
               raise SystemExit(f"dashboard build_sha mismatch: expected {expected_sha}, got {dashboard.get('build_sha')}")
-          if dashboard.get("app_version") != "5.4.0":
+          if dashboard.get("app_version") != "5.5.0":
               raise SystemExit(f"unexpected app_version: {dashboard.get('app_version')}")
           generated_at = dashboard.get("generated_at_seoul")
           if not generated_at:
@@ -203,6 +189,9 @@ jobs:
 
   deploy-pages:
     needs: build-data
+    concurrency:
+      group: kospi-shadow-pages-publish
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
