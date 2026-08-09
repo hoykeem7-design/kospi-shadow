@@ -1,0 +1,17 @@
+{
+  "status": "success",
+  "commit_sha": "e716b4224eb36b2a8c4ace3a74f650aa8ee4f305",
+  "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
+  "recorded_at_utc": "2026-08-09T21:35:52.909586+00:00",
+  "app_version": "5.5.0",
+  "generated_at_seoul": "2026-08-10T06:35:22.012208+09:00",
+  "data_quality": {
+    "target_provider": "krx_official_open_api",
+    "target_official": true,
+    "latest_source": "krx_official_open_api",
+    "target_date_max": "2026-08-07",
+    "warnings": [
+      "KIS futures snapshot: KIS futures board returned no contracts"
+    ]
+  }
+}
