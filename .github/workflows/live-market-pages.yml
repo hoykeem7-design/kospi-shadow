@@ -2,14 +2,6 @@ name: KOSPI Fast Live Market Refresh
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "app/**"
-      - "scripts/fast_live_market.py"
-      - "pyproject.toml"
-      - ".github/workflows/live-market-pages.yml"
   schedule:
     # 08:00-08:50 KST, Monday-Friday
     - cron: "*/10 23 * * 0-4"

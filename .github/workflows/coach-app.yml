@@ -209,14 +209,13 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          mkdir -p outputs
           verified=0
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error \
                 -H "Cache-Control: no-cache" \
                 "${PAGE_URL}data/dashboard.json?sha=$EXPECTED_SHA&attempt=$attempt" \
-                -o outputs/live-dashboard.json; then
-              LIVE_SHA=$(python -c 'import json; print(json.load(open("outputs/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
+                -o /tmp/live-dashboard.json; then
+              LIVE_SHA=$(python -c 'import json; print(json.load(open("/tmp/live-dashboard.json", encoding="utf-8")).get("build_sha") or "")')
               if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
                 verified=1
                 break
@@ -245,7 +244,7 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
-          live = json.loads(Path("outputs/live-dashboard.json").read_text(encoding="utf-8"))
+          live = json.loads(Path("/tmp/live-dashboard.json").read_text(encoding="utf-8"))
           status = {
               "status": "success",
               "commit_sha": os.environ["DEPLOYED_SHA"],
