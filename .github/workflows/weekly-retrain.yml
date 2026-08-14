@@ -125,10 +125,22 @@ jobs:
                   "model_runs/$VERSION/reports"
           if ! git diff --cached --quiet; then
             git commit -m "Record weekly full retrain $VERSION"
-            git push origin HEAD:main
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then
+                break
+              fi
+              echo "push race detected; rebasing on origin/main (attempt $attempt)"
+              git fetch origin main
+              git rebase origin/main
+              if [ "$attempt" -eq 3 ]; then
+                echo "unable to publish retrain outputs after 3 attempts"
+                exit 1
+              fi
+            done
           fi
 
       - name: Upload complete retraining artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.VERSION }}
