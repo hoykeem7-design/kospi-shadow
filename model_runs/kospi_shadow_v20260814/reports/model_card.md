@@ -8,7 +8,7 @@
 ## Current research prediction
 
 - Candidate target date: 2026-08-17
-- Intraday-up probability: 0.4132
+- Intraday-up probability: 0.4140
 - Research direction: SHORT
 - Timing valid: False
 - Actionable: **false** — Model promotion gate is closed; research output only.
@@ -16,9 +16,9 @@
 ## Validation
 
 - OOS observations: 3586
-- Model Brier: 0.248448
+- Model Brier: 0.248453
 - Expanding-prior baseline Brier: 0.249868
-- Brier improvement: 0.001421
+- Brier improvement: 0.001416
 - Bootstrap probability of beating baseline: 0.998
 - Probability predictions are shrunk toward the training prior using inner time-series CV.
 

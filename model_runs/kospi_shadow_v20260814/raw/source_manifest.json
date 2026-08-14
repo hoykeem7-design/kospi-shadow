@@ -1,6 +1,6 @@
 {
-  "collected_at_utc": "2026-08-14T08:19:59.598635+00:00",
-  "collection_seconds": 1679.465,
+  "collected_at_utc": "2026-08-14T09:20:14.321062+00:00",
+  "collection_seconds": 1893.287,
   "target_provider": "krx_official_open_api",
   "target_base_provider": "krx_official_open_api",
   "target_official": true,
@@ -22,7 +22,7 @@
   "collection_warnings": [],
   "artifact_files": {
     "models/challenger_model.joblib": {
-      "sha256": "65b5e5f39d211bbb242b493371dd36986f3f5b4253816e901cc892448f5a4129",
+      "sha256": "a233070100397b35e36e29965967b831a3211223671ffdd64b5fc0e7e6750ad5",
       "bytes": 7525
     },
     "processed/feature_columns.json": {
@@ -30,32 +30,32 @@
       "bytes": 1024
     },
     "processed/model_dataset_tail400.csv": {
-      "sha256": "7a2ce200dc7bc1a87c7d27117f5b6fddf608beae3ff0b02edb5aa0d49015caba",
-      "bytes": 435303
+      "sha256": "bb3e73e0619e692a9dd804c02a42f330693b0ebaf4127178d7f08f7f52770069",
+      "bytes": 435312
     },
     "raw/source_manifest.json": {
-      "sha256": "30c470de54c34284ce3fe803d0c5071f1f54c306a61ea9cd822c075964f261c8",
+      "sha256": "a81bec612522697fc86d7840f69aecc834d99c0611ebbbfa49d554932c41e3c4",
       "bytes": 625
     },
     "reports/latest_prediction.json": {
-      "sha256": "762dc4ddea222234743e462993ec1bdb373779191f2a960b751b7c382c6bb4dc",
-      "bytes": 3114
+      "sha256": "3106884267552a2d174c9f2d6b460423ecaad12023404fa90896e5b16beec728",
+      "bytes": 3111
     },
     "reports/metrics.json": {
-      "sha256": "b42bfe78e82ef58c31fa6573158b635052cfd71928940fda84db25d7084927bd",
-      "bytes": 6668
+      "sha256": "6fd090c39ef5bb9b65570de5b1ad388fda717eba7edb43505216e434b6d084fa",
+      "bytes": 6667
     },
     "reports/model_card.md": {
-      "sha256": "d68d01a5eaa8637ea96a5f60ad57ed7489c00b3c234011bb79378420ed9209c4",
+      "sha256": "450600ce853762a7e9de1e556bea2412863a50e58642f28fbe7863d7ccd7ac62",
       "bytes": 1087
     },
     "reports/oos_predictions.csv": {
-      "sha256": "29364dbaba2617f4445d9b38cef9d268115e1a8050c0ab2516f441346f87837a",
-      "bytes": 477858
+      "sha256": "c3fa45dd33f8bf926074edd76261353fca8d255546251ae45121289df6df4088",
+      "bytes": 478159
     },
     "reports/run_result.json": {
-      "sha256": "4b0ba1ee2ae5a61bdc2ebe973d0dfbf8471b836d923f4878b99f7b41ac29b983",
-      "bytes": 3030
+      "sha256": "0622cc585a2f725cd3d308354c3d747cc8882ef84760d9ed5cba9a06ceb6d99c",
+      "bytes": 3037
     },
     "requirements.txt": {
       "sha256": "79b587daa6d84ff9062e4d7f073269ae0f6c4843406345be5e6b409e6a21128a",

@@ -47,32 +47,32 @@
 [data] Yahoo batch: 5 factors from 2010-01-04
 [data] FRED us10y/DGS10
 [data] FRED us2y/DGS2
-[data] collection complete in 1679.465s; factors=['nasdaq', 'sox', 'sp500', 'us10y', 'us2y', 'usdk_rw', 'vix']
-[pipeline] feature table rows=4090 cols=57 in 0.0s
-[validation] walk-forward 1/57; test=504:567; model=logistic_C0.1; alpha=0.00; elapsed=0.6s
-[validation] walk-forward 10/57; test=1071:1134; model=logistic_C0.1; alpha=0.25; elapsed=7.5s
-[validation] walk-forward 20/57; test=1701:1764; model=histgb_leaves7; alpha=0.50; elapsed=17.1s
-[validation] walk-forward 30/57; test=2331:2394; model=histgb_leaves7; alpha=0.25; elapsed=28.0s
-[validation] walk-forward 40/57; test=2961:3024; model=logistic_C0.1; alpha=0.25; elapsed=39.5s
-[validation] walk-forward 50/57; test=3591:3654; model=histgb_leaves7; alpha=0.25; elapsed=51.6s
-[validation] walk-forward 57/57; test=4032:4090; model=logistic_C0.1; alpha=0.25; elapsed=60.4s
-[validation] final model=logistic_C0.1; alpha=0.25; total=61.6s
-[pipeline] full run complete in 1742.52s; status=RESTRICTED_SHADOW
+[data] collection complete in 1893.287s; factors=['nasdaq', 'sox', 'sp500', 'us10y', 'us2y', 'usdk_rw', 'vix']
+[pipeline] feature table rows=4090 cols=57 in 0.1s
+[validation] walk-forward 1/57; test=504:567; model=logistic_C0.1; alpha=0.00; elapsed=0.9s
+[validation] walk-forward 10/57; test=1071:1134; model=logistic_C0.1; alpha=0.25; elapsed=13.1s
+[validation] walk-forward 20/57; test=1701:1764; model=histgb_leaves7; alpha=0.50; elapsed=30.2s
+[validation] walk-forward 30/57; test=2331:2394; model=histgb_leaves7; alpha=0.25; elapsed=49.0s
+[validation] walk-forward 40/57; test=2961:3024; model=logistic_C0.1; alpha=0.25; elapsed=68.8s
+[validation] walk-forward 50/57; test=3591:3654; model=histgb_leaves7; alpha=0.25; elapsed=89.8s
+[validation] walk-forward 57/57; test=4032:4090; model=logistic_C0.1; alpha=0.25; elapsed=104.9s
+[validation] final model=logistic_C0.1; alpha=0.25; total=107.1s
+[pipeline] full run complete in 2003.387s; status=RESTRICTED_SHADOW
 {
   "run_mode": "full",
   "status": "RESTRICTED_SHADOW",
   "signal_enabled": false,
-  "brier": 0.24844776843573121,
+  "brier": 0.24845256325786966,
   "baseline_brier": 0.24986849799752878,
   "oos_n": 3586,
   "candidate_target_date": "2026-08-17",
-  "probability_intraday_up": 0.4132432077587533,
+  "probability_intraday_up": 0.4139780655282934,
   "research_direction": "SHORT",
   "timing_valid": false,
   "actionable": false,
   "runtime_seconds": {
-    "features": 0.05,
-    "validation_and_fit": 61.583,
-    "total": 1742.52
+    "features": 0.091,
+    "validation_and_fit": 107.082,
+    "total": 2003.387
   }
 }
