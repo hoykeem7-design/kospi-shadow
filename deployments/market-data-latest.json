@@ -1,17 +1,15 @@
 {
   "status": "success",
-  "commit_sha": "1acc65107645a3a72c800f25d5917761273c3c98",
+  "commit_sha": "94c1484b973477c1d9611a115a43cbdceface9ed",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-08-14T11:51:19.103949+00:00",
+  "recorded_at_utc": "2026-08-16T22:49:41.389237+00:00",
   "app_version": "5.5.0",
-  "generated_at_seoul": "2026-08-14T20:50:41.279775+09:00",
+  "generated_at_seoul": "2026-08-17T07:49:12.976513+09:00",
   "data_quality": {
-    "target_provider": "yahoo_unofficial_fallback",
+    "target_provider": "krx_official_open_api_plus_kis_provisional",
     "target_official": false,
-    "latest_source": "yahoo_unofficial_fallback",
+    "latest_source": "kis_provisional",
     "target_date_max": "2026-08-14",
-    "warnings": [
-      "KRX: GET failed after 4 attempts: https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd: 403 Client Error: Forbidden for url: https://data-dbg.krx.co.kr/svc/apis/idx/kospi_dd_trd?basDd=20260810"
-    ]
+    "warnings": []
   }
 }
