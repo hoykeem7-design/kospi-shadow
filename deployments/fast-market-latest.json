@@ -1,11 +1,11 @@
 {
   "status": "success",
   "mode": "fast_live_market_only",
-  "commit_sha": "931a86dbad74f121f83e667929fa6a649a1f00fa",
+  "commit_sha": "d985b3dd8d362a9fea787ee3de7ce50320e52776",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-08-16T23:35:34.192021+00:00",
+  "recorded_at_utc": "2026-08-16T23:52:09.471540+00:00",
   "app_version": "5.5.0",
-  "generated_at_seoul": "2026-08-17T08:35:13.353508+09:00",
+  "generated_at_seoul": "2026-08-17T08:51:45.406545+09:00",
   "kospi": {
     "name": "KOSPI",
     "price": 6977.94,
@@ -19,7 +19,7 @@
     "decliners": 204.0,
     "source": "KIS",
     "observed_at": null,
-    "received_at": "2026-08-17T08:35:14.654858+09:00",
+    "received_at": "2026-08-17T08:51:46.508416+09:00",
     "data_delay_seconds": null,
     "stale": null,
     "data_quality": "unknown_time"
@@ -36,7 +36,7 @@
     "volume": 110569.0,
     "source": "KIS",
     "observed_at": null,
-    "received_at": "2026-08-17T08:35:15.203568+09:00",
+    "received_at": "2026-08-17T08:51:46.962969+09:00",
     "data_delay_seconds": null,
     "stale": null,
     "data_quality": "unknown_time"
