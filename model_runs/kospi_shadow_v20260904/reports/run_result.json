@@ -1,0 +1,78 @@
+[pipeline] mode=full: collect data and perform walk-forward validation
+[data] KRX incremental scan: 4350 business dates from 2010-01-04 to 2026-09-04 (recent recheck=5)
+[data] KRX progress: 100/4350
+[data] KRX progress: 200/4350
+[data] KRX progress: 300/4350
+[data] KRX progress: 400/4350
+[data] KRX progress: 500/4350
+[data] KRX progress: 600/4350
+[data] KRX progress: 700/4350
+[data] KRX progress: 800/4350
+[data] KRX progress: 900/4350
+[data] KRX progress: 1000/4350
+[data] KRX progress: 1100/4350
+[data] KRX progress: 1200/4350
+[data] KRX progress: 1300/4350
+[data] KRX progress: 1400/4350
+[data] KRX progress: 1500/4350
+[data] KRX progress: 1600/4350
+[data] KRX progress: 1700/4350
+[data] KRX progress: 1800/4350
+[data] KRX progress: 1900/4350
+[data] KRX progress: 2000/4350
+[data] KRX progress: 2100/4350
+[data] KRX progress: 2200/4350
+[data] KRX progress: 2300/4350
+[data] KRX progress: 2400/4350
+[data] KRX progress: 2500/4350
+[data] KRX progress: 2600/4350
+[data] KRX progress: 2700/4350
+[data] KRX progress: 2800/4350
+[data] KRX progress: 2900/4350
+[data] KRX progress: 3000/4350
+[data] KRX progress: 3100/4350
+[data] KRX progress: 3200/4350
+[data] KRX progress: 3300/4350
+[data] KRX progress: 3400/4350
+[data] KRX progress: 3500/4350
+[data] KRX progress: 3600/4350
+[data] KRX progress: 3700/4350
+[data] KRX progress: 3800/4350
+[data] KRX progress: 3900/4350
+[data] KRX progress: 4000/4350
+[data] KRX progress: 4100/4350
+[data] KRX progress: 4200/4350
+[data] KRX progress: 4300/4350
+[data] KRX progress: 4350/4350
+[data] Yahoo batch: 5 factors from 2010-01-04
+[data] FRED us10y/DGS10
+[data] FRED us2y/DGS2
+[data] collection complete in 1866.204s; factors=['nasdaq', 'sox', 'sp500', 'us10y', 'us2y', 'usdk_rw', 'vix']
+[pipeline] feature table rows=4104 cols=57 in 0.1s
+[validation] walk-forward 1/58; test=504:567; model=logistic_C0.1; alpha=0.00; elapsed=1.0s
+[validation] walk-forward 10/58; test=1071:1134; model=logistic_C0.1; alpha=0.25; elapsed=13.2s
+[validation] walk-forward 20/58; test=1701:1764; model=histgb_leaves7; alpha=0.50; elapsed=30.5s
+[validation] walk-forward 30/58; test=2331:2394; model=histgb_leaves7; alpha=0.25; elapsed=49.4s
+[validation] walk-forward 40/58; test=2961:3024; model=logistic_C0.1; alpha=0.25; elapsed=69.5s
+[validation] walk-forward 50/58; test=3591:3654; model=histgb_leaves7; alpha=0.25; elapsed=90.7s
+[validation] walk-forward 58/58; test=4095:4104; model=logistic_C0.1; alpha=0.25; elapsed=108.1s
+[validation] final model=logistic_C0.1; alpha=0.25; total=110.3s
+[pipeline] full run complete in 1979.612s; status=RESTRICTED_SHADOW
+{
+  "run_mode": "full",
+  "status": "RESTRICTED_SHADOW",
+  "signal_enabled": false,
+  "brier": 0.2484611897747771,
+  "baseline_brier": 0.24986180498245977,
+  "oos_n": 3600,
+  "candidate_target_date": "2026-09-07",
+  "probability_intraday_up": 0.47766569911222867,
+  "research_direction": "FLAT",
+  "timing_valid": false,
+  "actionable": false,
+  "runtime_seconds": {
+    "features": 0.094,
+    "validation_and_fit": 110.327,
+    "total": 1979.612
+  }
+}
