@@ -1,0 +1,78 @@
+{
+  "generated_at_seoul": "2026-09-11T21:57:46.346006+09:00",
+  "candidate_target_date": "2026-09-14",
+  "latest_target_observation": "2026-09-10",
+  "probability_intraday_up": 0.47235783270100207,
+  "research_direction": "FLAT",
+  "probability_threshold": 0.57,
+  "model_gate_signal_enabled": false,
+  "timing_before_09_00": false,
+  "timing_valid_for_target": false,
+  "prediction_scope": "next_session_plan",
+  "trained_at_utc": "2026-09-11T12:57:46.345993+00:00",
+  "actionable": false,
+  "actionable_reason": "Model promotion gate is closed; research output only.",
+  "explanation": {
+    "method": "one_feature_to_training_median",
+    "final_probability": 0.47235783270100207,
+    "training_prior_probability": 0.48527622292528594,
+    "raw_model_probability": 0.43360266202815045,
+    "model_weight": 0.25,
+    "prior_weight": 0.75,
+    "summary": "최종 47.2%는 학습 기준확률 48.5%를 75%, 원모델 확률 43.4%를 25% 반영한 값입니다. 따라서 당일 요인보다 장기 기준확률의 영향이 더 큽니다.",
+    "positive_factors": [
+      {
+        "feature": "kospi_ret_lag_3",
+        "label": "KOSPI 3거래일 전 수익률",
+        "value": -0.005842419078850525,
+        "value_text": "-0.58%",
+        "effect_probability_points": 0.10644829119316229,
+        "neutral_probability": 0.3659095415078398
+      },
+      {
+        "feature": "kospi_ma_dist_20",
+        "label": "KOSPI 20일 이동평균 괴리",
+        "value": 0.03161108494410758,
+        "value_text": "+3.16%",
+        "effect_probability_points": 0.09353552443652191,
+        "neutral_probability": 0.37882230826448016
+      },
+      {
+        "feature": "kospi_ma_dist_10",
+        "label": "KOSPI 10일 이동평균 괴리",
+        "value": 0.029712084307940367,
+        "value_text": "+2.97%",
+        "effect_probability_points": 0.06818137024756804,
+        "neutral_probability": 0.404176462453434
+      }
+    ],
+    "negative_factors": [
+      {
+        "feature": "kospi_ret_lag_2",
+        "label": "KOSPI 2거래일 전 수익률",
+        "value": 0.013965018434054288,
+        "value_text": "+1.40%",
+        "effect_probability_points": -0.13981794579007178,
+        "neutral_probability": 0.6121757784910739
+      },
+      {
+        "feature": "kospi_ma_dist_5",
+        "label": "KOSPI 5일 이동평균 괴리",
+        "value": 0.01287112630707088,
+        "value_text": "+1.29%",
+        "effect_probability_points": -0.13908115910873708,
+        "neutral_probability": 0.6114389918097392
+      },
+      {
+        "feature": "kospi_vol_20",
+        "label": "KOSPI 20일 변동성",
+        "value": 0.027778804665361572,
+        "value_text": "+2.78%",
+        "effect_probability_points": -0.08755924043139474,
+        "neutral_probability": 0.5599170731323968
+      }
+    ],
+    "feature_count_evaluated": 48,
+    "note": "기여도는 해당 변수 하나만 학습 중간값으로 바꿔 본 국소 민감도입니다. 인과관계나 수익 보장을 뜻하지 않으며, 변수 간 상관 때문에 기여도의 합은 최종 확률과 정확히 일치하지 않습니다."
+  }
+}
