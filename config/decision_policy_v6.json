@@ -1,0 +1,71 @@
+{
+  "version": "6.0.0",
+  "objective": "risk_adjusted_buy_now_vs_cash_and_wait",
+  "actions": ["BUY NOW", "CONDITIONAL BUY", "WAIT", "NO BUY", "REDUCE"],
+  "max_candidates": 2,
+  "model_firewall": {
+    "disable_model_weight_when_signal_disabled": true,
+    "disable_model_weight_on_execution_failure": true,
+    "disable_model_weight_on_stale_or_missing_features": true,
+    "signal_disabled_does_not_force_no_buy": true,
+    "allow_heuristic_realtime_overlay": true,
+    "forbid_unexecuted_probabilities": true
+  },
+  "time_integrity": {
+    "separate_preopen_and_intraday": true,
+    "intraday_requires_current_session_inputs": true,
+    "forbid_future_data": true,
+    "stale_critical_inputs_block_buy_now": true
+  },
+  "factor_groups": [
+    "global_risk",
+    "korea_market_regime",
+    "fx_rates_volatility_commodities",
+    "flows_and_program",
+    "breadth",
+    "sector_relative_strength",
+    "security_relative_strength",
+    "price_volume_vwap",
+    "fundamentals_valuation",
+    "news_events",
+    "shadow_model",
+    "cost_slippage",
+    "event_risk"
+  ],
+  "missing_factor_policy": "drop_and_renormalize",
+  "correlation_policy": "deduplicate_correlated_evidence",
+  "risk_limits": {
+    "max_loss_per_trade_pct_capital": 0.5,
+    "max_single_name_pct_capital": 10.0,
+    "max_high_vol_single_name_pct_capital": 5.0,
+    "max_new_daily_exposure_pct_capital": 20.0,
+    "min_cash_pct_capital": 50.0
+  },
+  "default_on_ambiguity": "WAIT",
+  "entry_quality": {
+    "penalize_overextension": true,
+    "penalize_gap_overheat": true,
+    "penalize_below_vwap": true,
+    "penalize_low_volume_advance": true,
+    "penalize_intraday_high_chasing": true,
+    "require_reward_after_costs_vs_invalidation": true
+  },
+  "required_output": [
+    "now_action",
+    "one_line_decision",
+    "market_environment",
+    "opportunity",
+    "downside_risk",
+    "confidence",
+    "positive_drivers",
+    "negative_drivers",
+    "candidates",
+    "cancellation_conditions",
+    "wait_trigger",
+    "model_status",
+    "model_version",
+    "data_through",
+    "signal_enabled",
+    "sources_and_observation_times"
+  ]
+}
