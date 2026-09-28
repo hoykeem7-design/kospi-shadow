@@ -1,17 +1,15 @@
 {
   "status": "success",
-  "commit_sha": "451f6cecaf919250cf5bde48e2fdef7311d943cb",
+  "commit_sha": "d4c72bca914254448a83da5c1cf4cc556b1ebec2",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-09-25T15:48:39.447470+00:00",
+  "recorded_at_utc": "2026-09-28T01:04:38.439360+00:00",
   "app_version": "5.5.0",
-  "generated_at_seoul": "2026-09-26T00:47:44.196780+09:00",
+  "generated_at_seoul": "2026-09-28T10:04:04.535548+09:00",
   "data_quality": {
     "target_provider": "krx_official_open_api",
     "target_official": true,
     "latest_source": "krx_official_open_api",
     "target_date_max": "2026-09-23",
-    "warnings": [
-      "KIS 시장 데이터는 갱신됐지만 모델 확률은 마지막 검증 스냅샷입니다. 오래된 모델이면 매매 허가를 내리지 않습니다."
-    ]
+    "warnings": []
   }
 }
