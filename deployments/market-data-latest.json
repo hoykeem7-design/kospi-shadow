@@ -1,14 +1,14 @@
 {
   "status": "success",
-  "commit_sha": "7d2ab1f6cba3856b826760db33653a165da8af37",
+  "commit_sha": "339e928ba2f4c03031952b18c9e3b1092ba5e8ae",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-10-07T17:44:36.597334+00:00",
+  "recorded_at_utc": "2026-10-08T02:13:23.117543+00:00",
   "app_version": "5.5.0",
-  "generated_at_seoul": "2026-10-08T02:43:59.707825+09:00",
+  "generated_at_seoul": "2026-10-08T11:12:45.973087+09:00",
   "data_quality": {
-    "target_provider": "krx_official_open_api_plus_kis_provisional",
-    "target_official": false,
-    "latest_source": "kis_provisional",
+    "target_provider": "krx_official_open_api",
+    "target_official": true,
+    "latest_source": "krx_official_open_api",
     "target_date_max": "2026-10-07",
     "warnings": []
   }
