@@ -1,0 +1,174 @@
+{
+  "created_at_utc": "2026-11-06T16:00:09.849579+00:00",
+  "run_mode": "full",
+  "project": "kospi_shadow_decision_coach_v5",
+  "model_target": "intraday_up",
+  "return_column": "intraday_return",
+  "final_selected_model": "logistic_C0.1_shrink0.25",
+  "data_manifest": {
+    "collected_at_utc": "2026-11-06T15:58:19.177148+00:00",
+    "collection_seconds": 2021.106,
+    "target_provider": "krx_official_open_api",
+    "target_base_provider": "krx_official_open_api",
+    "target_official": true,
+    "target_latest_source": "krx_official_open_api",
+    "target_provisional_dates": [],
+    "target_rows": 4145,
+    "target_date_min": "2010-01-04",
+    "target_date_max": "2026-11-05",
+    "target_sha256": "b93921d7c7cf70397949e93eafd27104f32e2f404ee3c267e874b6727fbf9cc0",
+    "factor_names": [
+      "nasdaq",
+      "sox",
+      "sp500",
+      "us10y",
+      "us2y",
+      "usdk_rw",
+      "vix"
+    ],
+    "collection_warnings": []
+  },
+  "runtime_seconds": {
+    "features": 0.093,
+    "validation_and_fit": 107.936,
+    "total": 2131.953
+  },
+  "validation_design": {
+    "outer": "expanding walk-forward blocks",
+    "inner": "TimeSeriesSplit(n_splits=3, gap=1)",
+    "test_block_sessions": 63,
+    "minimum_initial_train_sessions": 504,
+    "candidate_profile": "compact",
+    "probability_regularization": "inner-CV shrinkage toward training prior",
+    "external_factor_alignment": "strictly prior calendar date; exact date matches prohibited",
+    "strategy_note": "Research proxy on KOSPI index returns; not an executable ETF/futures fill model."
+  },
+  "classification": {
+    "n": 3641,
+    "brier": 0.24841267339528608,
+    "baseline_brier": 0.24982903089447883,
+    "brier_improvement": 0.0014163574991927497,
+    "log_loss": 0.6899706810386887,
+    "roc_auc": 0.5409388349455901,
+    "directional_accuracy_at_0_5": 0.524306509200769,
+    "bootstrap_probability_model_beats_baseline": 0.994,
+    "bootstrap_brier_difference_ci90": [
+      -0.0022953329097027964,
+      -0.0004815200028181782
+    ]
+  },
+  "strategy_proxy": {
+    "model": {
+      "cumulative_return": 0.12607119867529404,
+      "annualized_return": 0.008251700208898427,
+      "annualized_sharpe": 0.1861901935127232,
+      "max_drawdown": -0.2570043195754227,
+      "active_sessions": 191
+    },
+    "long_baseline": {
+      "cumulative_return": -0.9960921750072773,
+      "annualized_return": -0.3187075086739132,
+      "annualized_sharpe": -2.301436590954508,
+      "max_drawdown": -0.9962109149017504,
+      "active_sessions": 3641
+    }
+  },
+  "promotion": {
+    "signal_enabled": false,
+    "status": "RESTRICTED_SHADOW",
+    "checks": {
+      "minimum_oos": true,
+      "brier_improvement": false,
+      "bootstrap_support": true,
+      "official_target": true,
+      "data_fresh": true,
+      "positive_net_return": true,
+      "sharpe_above_long": true
+    },
+    "target_data_age_calendar_days": 2
+  },
+  "latest_prediction": {
+    "generated_at_seoul": "2026-11-07T01:00:09.849593+09:00",
+    "candidate_target_date": "2026-11-09",
+    "latest_target_observation": "2026-11-05",
+    "probability_intraday_up": 0.442907826063215,
+    "research_direction": "FLAT",
+    "probability_threshold": 0.57,
+    "model_gate_signal_enabled": false,
+    "timing_before_09_00": false,
+    "timing_valid_for_target": false,
+    "prediction_scope": "next_session_plan",
+    "trained_at_utc": "2026-11-06T16:00:09.849579+00:00",
+    "actionable": false,
+    "actionable_reason": "Model promotion gate is closed; research output only.",
+    "explanation": {
+      "method": "one_feature_to_training_median",
+      "final_probability": 0.442907826063215,
+      "training_prior_probability": 0.4841978287092883,
+      "raw_model_probability": 0.3190378181249951,
+      "model_weight": 0.25,
+      "prior_weight": 0.75,
+      "summary": "최종 44.3%는 학습 기준확률 48.4%를 75%, 원모델 확률 31.9%를 25% 반영한 값입니다. 따라서 당일 요인보다 장기 기준확률의 영향이 더 큽니다.",
+      "positive_factors": [
+        {
+          "feature": "kospi_ret_lag_3",
+          "label": "KOSPI 3거래일 전 수익률",
+          "value": -0.03589130034066779,
+          "value_text": "-3.59%",
+          "effect_probability_points": 0.07843061575158722,
+          "neutral_probability": 0.3644772103116278
+        },
+        {
+          "feature": "kospi_ma_dist_20",
+          "label": "KOSPI 20일 이동평균 괴리",
+          "value": -0.07000445668208644,
+          "value_text": "-7.00%",
+          "effect_probability_points": 0.0645001099382197,
+          "neutral_probability": 0.3784077161249953
+        },
+        {
+          "feature": "kospi_ma_dist_10",
+          "label": "KOSPI 10일 이동평균 괴리",
+          "value": -0.05405343672130891,
+          "value_text": "-5.41%",
+          "effect_probability_points": 0.06271531902399996,
+          "neutral_probability": 0.38019250703921503
+        }
+      ],
+      "negative_factors": [
+        {
+          "feature": "kospi_ret_lag_2",
+          "label": "KOSPI 2거래일 전 수익률",
+          "value": 0.006197787490772377,
+          "value_text": "+0.62%",
+          "effect_probability_points": -0.1673795857156405,
+          "neutral_probability": 0.6102874117788555
+        },
+        {
+          "feature": "kospi_ma_dist_5",
+          "label": "KOSPI 5일 이동평균 괴리",
+          "value": -0.04900726730989424,
+          "value_text": "-4.90%",
+          "effect_probability_points": -0.16530843608792645,
+          "neutral_probability": 0.6082162621511414
+        },
+        {
+          "feature": "kospi_mom_20",
+          "label": "KOSPI 20일 모멘텀",
+          "value": -0.20871852907891053,
+          "value_text": "-20.87%",
+          "effect_probability_points": -0.09232619186489333,
+          "neutral_probability": 0.5352340179281083
+        }
+      ],
+      "feature_count_evaluated": 48,
+      "note": "기여도는 해당 변수 하나만 학습 중간값으로 바꿔 본 국소 민감도입니다. 인과관계나 수익 보장을 뜻하지 않으며, 변수 간 상관 때문에 기여도의 합은 최종 확률과 정확히 일치하지 않습니다."
+    }
+  },
+  "limitations": [
+    "Yahoo factors are unofficial and intended for research/personal use; provider availability is not guaranteed.",
+    "FRED final historical observations are not a substitute for ALFRED point-in-time vintages for revised macro series.",
+    "The strategy calculation uses index returns as a proxy and does not model an actual ETF/futures order book, taxes, spread, or market impact.",
+    "A passing backtest does not establish future profitability."
+  ]
+}
