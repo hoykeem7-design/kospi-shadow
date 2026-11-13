@@ -1,0 +1,67 @@
+{
+  "collected_at_utc": "2026-11-13T16:10:44.805490+00:00",
+  "collection_seconds": 1717.646,
+  "target_provider": "krx_official_open_api",
+  "target_base_provider": "krx_official_open_api",
+  "target_official": true,
+  "target_latest_source": "krx_official_open_api",
+  "target_provisional_dates": [],
+  "target_rows": 4150,
+  "target_date_min": "2010-01-04",
+  "target_date_max": "2026-11-12",
+  "target_sha256": "63873b8bbee15241881ead9c1a19ab7d09c9ffb36d7f82ffe9063ac3101db918",
+  "factor_names": [
+    "nasdaq",
+    "sox",
+    "sp500",
+    "us10y",
+    "us2y",
+    "usdk_rw",
+    "vix"
+  ],
+  "collection_warnings": [],
+  "artifact_files": {
+    "models/challenger_model.joblib": {
+      "sha256": "7c1b6689f991c1ca5ac04ca42937f919631961ee15dc97c7028103d9cfad9462",
+      "bytes": 7525
+    },
+    "processed/feature_columns.json": {
+      "sha256": "5204c04fd6c1da6258599d621cb53a1597719736cce572e786c1eef3b9c6be0b",
+      "bytes": 1024
+    },
+    "processed/model_dataset_tail400.csv": {
+      "sha256": "c4b131bffe1cda5c6197f6f0968cb82e9f95e6d68f477aefe1a6942534595493",
+      "bytes": 435045
+    },
+    "raw/source_manifest.json": {
+      "sha256": "1ca4744be96a891a2fddaa71b6df22933e1410ec56c11e35149183e4fa8c3751",
+      "bytes": 625
+    },
+    "reports/latest_prediction.json": {
+      "sha256": "5be7d2dada8161c90f9be56459292df1a3aac56890170f9a12dcda8952bb4361",
+      "bytes": 3109
+    },
+    "reports/metrics.json": {
+      "sha256": "5cb8419b99a86e240cdda26877f514e54130a2da72a115e5b0d6ff991fd002b8",
+      "bytes": 6663
+    },
+    "reports/model_card.md": {
+      "sha256": "621e82346a342817cfd8b41a8b54fb84b8de22c651a5d975369171ee5694a9d9",
+      "bytes": 1086
+    },
+    "reports/oos_predictions.csv": {
+      "sha256": "0771130fd5bfaedf0a44634256559fd52a2a18f202791025b5812bfd23a19dc9",
+      "bytes": 485855
+    },
+    "reports/run_result.json": {
+      "sha256": "19a95edfdfcfa37ca565c2b3335040cc5e9effbf9cd8007e4b066d0976b386a4",
+      "bytes": 3031
+    },
+    "requirements.txt": {
+      "sha256": "79b587daa6d84ff9062e4d7f073269ae0f6c4843406345be5e6b409e6a21128a",
+      "bytes": 19
+    }
+  },
+  "weekly_full_retrain": true,
+  "model_dataset_note": "Pipeline currently persists the latest 400 feature rows only; full feature table is not exported by current code."
+}
