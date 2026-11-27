@@ -1,17 +1,15 @@
 {
   "status": "success",
-  "commit_sha": "f3ac0065792702868fb928ce5605489a82c70a75",
+  "commit_sha": "52ada586b46b908ff47795472a1c03945dfa2be7",
   "page_url": "https://hoykeem7-design.github.io/kospi-shadow/",
-  "recorded_at_utc": "2026-11-27T04:28:27.938529+00:00",
+  "recorded_at_utc": "2026-11-27T19:52:40.235704+00:00",
   "app_version": "5.5.0",
-  "generated_at_seoul": "2026-11-27T13:26:52.996467+09:00",
+  "generated_at_seoul": "2026-11-28T04:52:07.529996+09:00",
   "data_quality": {
-    "target_provider": "krx_official_open_api",
-    "target_official": true,
-    "latest_source": "krx_official_open_api",
-    "target_date_max": "2026-11-26",
-    "warnings": [
-      "Weather forecast: GET failed after 2 attempts: https://api.open-meteo.com/v1/forecast: HTTPSConnectionPool(host='api.open-meteo.com', port=443): Read timed out. (read timeout=30)"
-    ]
+    "target_provider": "krx_official_open_api_plus_kis_provisional",
+    "target_official": false,
+    "latest_source": "kis_provisional",
+    "target_date_max": "2026-11-27",
+    "warnings": []
   }
 }
